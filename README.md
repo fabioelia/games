@@ -1,4 +1,4 @@
-# 🕹️ F1V Arcade
+# 🕹️ Games
 
 Four browser games, no build step — static files only. The root `index.html`
 is a launcher that picks between them.
