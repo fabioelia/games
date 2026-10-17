@@ -75,9 +75,18 @@ SPSA, "Neural net" trains three small networks on top with evolution
 strategies, and a sequential test only promotes a brain that beats the
 current champion. Saved brains are kept in the browser.
 
-Online play and the shared brain library rely on the Claude artifact
-runtime, so they're off when the page is served from here; everything else
-runs as-is. Announcer callouts play the clips in `paintball/clips/`.
+**Online:** press **Create online room** and share the link (`?room=CODE`).
+Everyone who opens it joins the room and picks who they're playing as; one
+person presses **Host this match online** and starts the match, and bots
+play every name nobody picked. Online matches are free-for-all. It's
+peer-to-peer WebRTC via [PeerJS](https://peerjs.com) and its free public
+broker, with the first person in the room relaying messages for the rest —
+keep the host's and the room creator's tabs open. On strict networks add a
+TURN relay the same way as Pixel Pitch: `paintball/?turn=USER:CREDENTIAL@host`
+(it's remembered and carried in the share link).
+
+Saved bot brains live in each browser. Announcer callouts play the clips in
+`paintball/clips/`.
 
 ## Run locally
 
