@@ -1,2 +1,4 @@
 .DS_Store
 .claude/
+hardline/node_modules/
+hardline/test/e2e/out/

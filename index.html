@@ -32,8 +32,10 @@
     flex-wrap: wrap;
     justify-content: center;
     width: 100%;
-    max-width: 1220px;
+    max-width: 1640px;
   }
+  /* two by two on laptops; all four across only on wide screens */
+  @media (max-width: 1699px) { .games { max-width: 820px; } }
   a.game {
     flex: 1 1 300px;
     max-width: 380px;
@@ -68,6 +70,32 @@
   a.game.paintball:hover { border-color: #f472b6; }
   a.game.paintball h2 { color: #f472b6; }
   a.game.paintball .tag { color: #f472b6; border-color: #f472b6; }
+  /* the Matrix tile: phosphor green on black, with a faint falling-code backdrop */
+  a.game.hardline {
+    position: relative;
+    overflow: hidden;
+    background: #050c08;
+    border-color: #0f3d24;
+    isolation: isolate;
+  }
+  a.game.hardline::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: .5;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 13px, rgba(0, 255, 90, .07) 13px 14px),
+      linear-gradient(180deg, rgba(0, 255, 90, .0) 0%, rgba(0, 255, 90, .12) 60%, rgba(0, 0, 0, 0) 100%);
+    background-size: 14px 100%, 100% 200%;
+    animation: hl-rain 6s linear infinite;
+  }
+  @keyframes hl-rain { from { background-position: 0 0, 0 -100%; } to { background-position: 0 0, 0 100%; } }
+  @media (prefers-reduced-motion: reduce) { a.game.hardline::before { animation: none; } }
+  a.game.hardline:hover { border-color: #2dff7a; box-shadow: 0 0 24px rgba(45, 255, 122, .25); }
+  a.game.hardline h2 { color: #2dff7a; text-shadow: 0 0 10px rgba(45, 255, 122, .55); }
+  a.game.hardline p { color: #7fae93; }
+  a.game.hardline .tag { color: #2dff7a; border-color: #2dff7a; }
   footer { color: #4a5578; font-size: 12px; letter-spacing: 1px; }
 </style>
 </head>
@@ -92,6 +120,12 @@
       <h2>Standup Paintball</h2>
       <p>A 3D bot-driven paintball match on a Dust II-style map — paste the standup list, last one standing runs standup. Train the bots between rounds.</p>
       <div class="tag">TEAM · BOTS · 3D</div>
+    </a>
+    <a class="game hardline" href="hardline/">
+      <div class="icon">💊</div>
+      <h2>Hardline</h2>
+      <p>A two-player escape from inside the Matrix — one of you is jacked in and can see the room, the other holds the manual that can read it. No chat: talk it out, beat the clock, wake up.</p>
+      <div class="tag">2 PLAYER · ONLINE · 3D</div>
     </a>
   </div>
   <footer>no installs · runs in the browser</footer>

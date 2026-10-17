@@ -1,6 +1,6 @@
 # 🕹️ F1V Arcade
 
-Three browser games, no build step — static files only. The root `index.html`
+Four browser games, no build step — static files only. The root `index.html`
 is a launcher that picks between them.
 
 ## 🐵 Monkey Escape (`monkey/`)
@@ -87,6 +87,28 @@ TURN relay the same way as Pixel Pitch: `paintball/?turn=USER:CREDENTIAL@host`
 
 Saved bot brains live in each browser. Announcer callouts play the clips in
 `paintball/clips/`.
+
+## 💊 Hardline (`hardline/`)
+
+A two-player, voice-first co-op escape set inside a Matrix-style construct.
+One of you is **jacked in** and sees a 3D room but can't read it; the other
+holds the **manual** that can read it but can't see it. No in-game chat —
+start a Discord call, describe what you see, and beat the clock. Built with
+[Three.js](https://threejs.org) (vendored, minified).
+
+**Runs: Classic** (5 rooms) · **Deep Loop** (6 harder rooms) · **Gauntlet** (all 11).
+Roles swap every room; a wrong answer costs 15 s off the shared clock; running
+out of time re-rolls the room instead of ending the run.
+
+**Playing:** open the page, *Create a private session*, and send your partner
+the four-letter code or invite link. There is no game server — like Pixel
+Pitch, it is WebRTC through PeerJS's public broker, and **the creator's tab
+runs the game**, so the host has to keep it open. *Show on TV* opens a
+spoiler-free bridge display you can cast to a Chromecast. The same TURN option
+as Pixel Pitch (`?turn=USER:CRED@host`) applies for VPNs and strict networks.
+
+The game has its own [README](hardline/README.md) (rooms, architecture, tests)
+and an optional Node server for LAN play: `cd hardline && npm install && npm start`.
 
 ## Run locally
 
