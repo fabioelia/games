@@ -844,7 +844,7 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     cfg: { players: 10, pop: 24, cap: 75, mut: 2 }, skills: new Set(['move', 'shoot', 'nades', 'cover', 'jump', 'hear', 'radar', 'team']) };
   // online play: 'local' runs its own match, 'host' runs the match for the room, 'client' renders the host's match
   const NET = { room: null, mode: 'local', epoch: 0, hostPeer: null, hostNick: '', myPeer: null, joined: false, nick: '', matchId: 0, clientMatch: -1,
-    names: {}, namesV: 0, user: null, snaps: [], fx: [], snapAcc: 0, metaAcc: 0, lastSnapAt: 0, saySeen: {}, missing: {}, rosterSig: '', pred: null, lastInp: '', recAcc: 0, nextRecoil: 0, sayN: 0, startedAt: Date.now() };
+    names: {}, namesV: 0, user: null, snaps: [], fx: [], snapAcc: 0, metaAcc: 0, lastSnapAt: 0, saySeen: {}, missing: {}, rosterSig: '', local: null, myBalls: [], shots: [], shotN: 0, nextShotAt: 0, lastJ: 0, offs: [], lo: 0, late: 0, gap: 83, delay: 150, lastInp: '', inpAt: 0, recAcc: 0, sayN: 0, startedAt: Date.now() };
   const INP = { keys: {}, yaw: 0, pitch: 0, fire: false, j: 0, r: 0, q: 0, g: 0, t: 0, locked: false, drag: false };
   function netFx(e) { if (NET.mode === 'host') { NET.fx.push(e); if (NET.fx.length > 60) NET.fx.shift(); } }
   function netEvt(o) { if (NET.mode === 'host' && NET.room) NET.room.emit('evt', o).catch(() => {}); }
@@ -867,7 +867,7 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
       lowCover: false, coverT: 0, tx: x, ty: y, tsurf: null, vx: 0, vy: 0, angle: ti === 0 ? 0 : Math.PI,
       plan: [], mode: 'move', home: { x, y, s: null }, holdUntil: 0, peekUntil: 0, peeks: 0, lane, panic: false,
       nades: { smoke: 1, paint: 1 }, nadeCd: rand(5, 10), nextDecide: rand(0, .5), ammo: CLIP, reloadUntil: 0, reloadDur: 1, pushedOn: -1,
-      nextShot: 0, react: 0, foe: null, scanT: 0, strafeDir: Math.random() < .5 ? 1 : -1, strafeT: 0, lastX: x, lastY: y, stuckT: 1, emote: null, clutched: false, rung: 0 });
+      nextShot: 0, react: 0, foe: null, scanT: 0, strafeDir: Math.random() < .5 ? 1 : -1, strafeT: 0, lastX: x, lastY: y, stuckT: 1, emote: null, clutched: false, rung: 0, tp: (b.tp | 0) + 1 });
   }
   // spread free-for-all spawns around the map, snapped to walkable ground
   function placeFFA(b, i, n) {
@@ -1829,7 +1829,7 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   const base = document.createElement('canvas'); base.width = W * 2; base.height = H * 2;
   const splatCv = document.createElement('canvas'); splatCv.width = W * 2; splatCv.height = H * 2;
   const sctx = splatCv.getContext('2d'); sctx.scale(2, 2);
-  let dpr = 1, groundDirty = true;
+  let dpr = 1, groundDirty = true, groundPatch = null;
 
   function paintBase() {
     const g = base.getContext('2d');
@@ -1866,7 +1866,8 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   function splat(x, y, color, size) {
     if (quiet()) return;
     netFx(['g', Math.round(x * 10) / 10, Math.round(y * 10) / 10, color, size]);
-    groundDirty = true;
+    const r = size * 2.5, p = groundPatch;
+    groundPatch = p ? [Math.min(p[0], x - r), Math.min(p[1], y - r), Math.max(p[2], x + r), Math.max(p[3], y + r)] : [x - r, y - r, x + r, y + r];
     sctx.fillStyle = color; sctx.globalAlpha = .9;
     for (let i = 0; i < 6; i++) { sctx.beginPath(); sctx.arc(x + rand(-.5, .5) * size, y + rand(-.5, .5) * size, size * rand(.28, .62), 0, Math.PI * 2); sctx.fill(); }
     for (let i = 0; i < 7; i++) { const a = rand(0, Math.PI * 2), d = size * rand(.8, 1.8); sctx.beginPath(); sctx.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, size * rand(.07, .18), 0, Math.PI * 2); sctx.fill(); }
@@ -2099,10 +2100,26 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   const outer = new THREE.Mesh(new THREE.PlaneGeometry(5000, 5000), new THREE.MeshStandardMaterial({ map: outerTex, roughness: 1 }));
   outer.rotation.x = -Math.PI / 2; outer.position.y = -.4; outer.receiveShadow = true; scene.add(outer);
   let groundT = 0;
+  // paint lands a patch at a time, so only that patch goes to the graphics card instead of the whole 2000×1200 field;
+  // the replay view has its own GL context and its own copy of the texture, so it gets the same patch
+  const patchCv = document.createElement('canvas'), patchTex = new THREE.Texture(patchCv), patchAt = new THREE.Vector2();
   function refreshGround(now) {
-    if (!groundDirty || now - groundT < 120) return;
-    gctx.drawImage(base, 0, 0); gctx.drawImage(splatCv, 0, 0);
-    groundTex.needsUpdate = true; groundDirty = false; groundT = now;
+    if (!(groundDirty || groundPatch) || now - groundT < 120) return;
+    groundT = now;
+    if (groundDirty || ![renderer, kcR].every(r => !r || r.capabilities.isWebGL2)) {
+      gctx.drawImage(base, 0, 0); gctx.drawImage(splatCv, 0, 0);
+      groundTex.needsUpdate = true; groundDirty = false; groundPatch = null;
+      return;
+    }
+    const cw = groundCv.width, ch = groundCv.height, [px0, py0, px1, py1] = groundPatch;
+    const x0 = clamp(Math.floor(px0 * 2), 0, cw), y0 = clamp(Math.floor(py0 * 2), 0, ch), x1 = clamp(Math.ceil(px1 * 2), 0, cw), y1 = clamp(Math.ceil(py1 * 2), 0, ch), w = x1 - x0, h = y1 - y0;
+    groundPatch = null;
+    if (w <= 0 || h <= 0) return;
+    gctx.drawImage(base, x0, y0, w, h, x0, y0, w, h); gctx.drawImage(splatCv, x0, y0, w, h, x0, y0, w, h);
+    patchCv.width = w; patchCv.height = h; patchCv.getContext('2d').drawImage(groundCv, x0, y0, w, h, 0, 0, w, h);
+    // texture rows count from the bottom
+    patchAt.set(x0, ch - y1);
+    for (const r of [renderer, kcR]) if (r && r.properties.get(groundTex).__webglTexture) r.copyTextureToTexture(patchAt, patchTex, groundTex);
   }
   function aoGeo(geo, h) {
     const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
@@ -2166,13 +2183,12 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     g.fillRect(30 + rand(-6, 6), 32, rand(2, 4), rand(14, 28));
   })));
   const decalGeo = new THREE.PlaneGeometry(1, 1);
-  const decals = [];
+  const decals = [], decalMats = splatTex.map(ts => ts.map(t => new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: .35 })));
   function clearDecals() { decals.forEach(d => scene.remove(d)); decals.length = 0; sprays.forEach(d => scene.remove(d)); sprays.length = 0; }
   const sprays = [];
   function wallSplat(o, ball, quiet) {
     if (TRAIN.on && (TRAIN.bg || !TRAIN.watch)) return;
     netFx(['w', o.id, Math.round(ball.x * 10) / 10, Math.round(ball.y * 10) / 10, Math.round(ball.h * 10) / 10, ball.owner.team, quiet ? 1 : 0]);
-    groundDirty = true;
     let nx, nz, px, pz;
     if (o.t === 'c') { const dx = ball.x - o.x, dy = ball.y - o.y, d = Math.hypot(dx, dy) || 1; nx = dx / d; nz = dy / d; px = o.x + nx * (o.r + .25); pz = o.y + nz * (o.r + .25); }
     else {
@@ -2182,11 +2198,11 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
       pz = i === 2 ? o.y - .25 : i === 3 ? o.y + o.h + .25 : clamp(ball.y, o.y, o.y + o.h);
     }
     const y = clamp(ball.h, 2, o.z - 2);
-    const mat = new THREE.MeshStandardMaterial({ map: splatTex[ball.owner.team][Math.random() * 3 | 0], transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: .35 });
+    const mat = decalMats[ball.owner.team][Math.random() * 3 | 0];
     const m = new THREE.Mesh(decalGeo, mat); const s = rand(7, 11); m.scale.set(s, s, 1);
     m.position.set(X(px), y, Z(pz)); m.lookAt(X(px + nx), y, Z(pz + nz)); m.rotateZ(rand(0, Math.PI * 2));
     scene.add(m); decals.push(m);
-    if (decals.length > 350) { const old = decals.shift(); scene.remove(old); old.material.dispose(); }
+    if (decals.length > 350) scene.remove(decals.shift());
     if (!quiet && Math.random() < .5) sfx.splat(ball.x, ball.y, false);
   }
   // wall sprays: every player has a tag; one per round, the newest replaces the old one
@@ -2245,11 +2261,11 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   function flatSplat(x, y, h, team, size) {
     if (quiet()) return;
     netFx(['f', Math.round(x * 10) / 10, Math.round(y * 10) / 10, Math.round(h * 10) / 10, team, size]);
-    const mat = new THREE.MeshStandardMaterial({ map: splatTex[team][Math.random() * 3 | 0], transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: .35 });
+    const mat = decalMats[team][Math.random() * 3 | 0];
     const m = new THREE.Mesh(decalGeo, mat); m.scale.set(size, size, 1);
     m.rotation.set(-Math.PI / 2, 0, rand(0, Math.PI * 2)); m.position.set(X(x), h + .15, Z(y));
     scene.add(m); decals.push(m);
-    if (decals.length > 350) { const old = decals.shift(); scene.remove(old); old.material.dispose(); }
+    if (decals.length > 350) scene.remove(decals.shift());
   }
 
   // players
@@ -2480,8 +2496,12 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   const hopperCount = b => b.reloadUntil ? Math.floor(CLIP * clamp(1 - (b.reloadUntil - S.t) / b.reloadDur, 0, 1)) : b.ammo;
   function setHopper(list, n) { if (list) list.forEach((ball, i) => { ball.visible = i < n; }); }
   function showMesh(b) { const m = meshes[b.id]; if (m && b.alive) { m.g.visible = true; m.tag.visible = false; body(m, b.x, b.y, b.z, b.angle, b.walk, Math.hypot(b.vx, b.vy), b.ck, b.vz !== 0, b.climbing, b.reloadUntil ? 1 - (b.reloadUntil - S.t) / b.reloadDur : -1, emoteOf(b)); } }
+  let kcAcc = 0;
   function renderKC(real) {
     const k = KC.cur; if (!k || !kcR) return;
+    // the replay draws the whole scene a second time in its own GL context, so it runs at about 30 frames a second
+    kcAcc += real; if (kcAcc < 1 / 31) return;
+    real = kcAcc; kcAcc = 0;
     const fr = k.clip.frames, by = k.clip.by, victim = k.clip.victim;
     const i0 = Math.floor(k.p), i1 = Math.min(fr.length - 1, i0 + 1), f = k.p - i0, A = fr[i0], B = fr[i1];
     const lerp = (a, b) => a + (b - a) * f;
@@ -2556,8 +2576,7 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     }
     const mine = !hold && cb === myBot() && NET.joined;
     if (mine) {
-      const p = NET.mode === 'client' && NET.pred ? NET.pred : cb;
-      camYaw = INP.yaw; camX = p.x; camZ = p.y; camPitch = INP.pitch;
+      camYaw = INP.yaw; camX = cb.x; camZ = cb.y; camPitch = INP.pitch;
     }
     let want = cb.angle;
     if (hold) want = Math.atan2(hold.by.y - pos.y, hold.by.x - pos.x);
@@ -3248,13 +3267,39 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     b.foe = null; b.mode = 'hold'; b.plan = [];
     if (b.reloadUntil && S.t >= b.reloadUntil) { b.reloadUntil = 0; b.ammo = CLIP; sfx.reloaded(b.x, b.y); }
     if (edge('r') && b.ammo < CLIP) startReload(b, false);
-    if (edge('j') && b.vz === 0 && !b.climbing) { b.vz = JUMP_V; sfx.jump(b.x, b.y); }
+    const jumped = edge('j');
     if (edge('q') && b.nades.smoke) throwNade(b, 'smoke', b.x + Math.cos(b.angle) * 200, b.y + Math.sin(b.angle) * 200);
     if (edge('g') && b.nades.paint) throwNade(b, 'paint', b.x + Math.cos(b.angle) * 180, b.y + Math.sin(b.angle) * 180);
     if (edge('t')) doSpray(b, false);
+    // a remote player's own browser moves them and fires their shots, so neither waits on the network; the host only keeps it plausible.
+    // Right after the host has moved them (a new round), they stand still until their browser has caught up.
+    const remote = b.human !== 'local' && Array.isArray(inp.p), own = remote && +inp.tp === b.tp ? inp.p.map(Number) : null;
+    if (own) {
+      const [x, y, z, fl] = own;
+      if (![x, y, z].every(Number.isFinite) || Math.hypot(x - b.x, y - b.y) > 120) b.tp++;
+      else { b.x = clamp(x, R + 2, W - R - 2); b.y = clamp(y, R + 2, H - R - 2); b.z = clamp(z, 0, 200); }
+      b.crouch = !!(fl & 1); b.climbing = !!(fl & 2); b.vz = fl & 4 ? 1 : 0; b.surf = b.z > 0 ? surfaceAt(b.x, b.y, b.z) : null;
+      b.ck += ((b.crouch ? 1 : 0) - b.ck) * Math.min(1, dt * 12);
+      if (jumped && b.vz) sfx.jump(b.x, b.y);
+      for (const sh of Array.isArray(inp.s) ? inp.s.slice(-4) : []) {
+        const n = Array.isArray(sh) ? +sh[0] : NaN;
+        if (!(n > (b.shotN || 0)) || !Number.isFinite(+sh[1]) || !Number.isFinite(+sh[2])) continue;
+        b.shotN = n;
+        if (b.ammo > 0 && S.t >= S.holdUntil) fireAim(b, +sh[1], clamp(+sh[2], -1.2, 1.2));
+      }
+    } else if (!remote) {
+      if (+inp.f && S.t >= b.nextShot && S.t >= S.holdUntil) fireAim(b, ...aimShot(b, b.angle, b.pitch));
+      walkHuman(b, inp, jumped, dt);
+    }
+    // a remote player's position arrives in steps, so the speed behind the walk animation and the spread is smoothed
+    const k = own ? .25 : 1;
+    b.vx += ((b.x - px) / dt - b.vx) * k; b.vy += ((b.y - py) / dt - b.vy) * k; b.walk += Math.hypot(b.x - px, b.y - py);
+  }
+  // a person's movement from their keys: the host runs it for its own player, and each remote player's browser for theirs
+  function walkHuman(b, inp, jumped, dt) {
+    if (jumped && b.vz === 0 && !b.climbing) { b.vz = JUMP_V; sfx.jump(b.x, b.y); }
     b.crouch = !!+inp.c && b.vz === 0 && !b.climbing;
     b.ck += ((b.crouch ? 1 : 0) - b.ck) * Math.min(1, dt * 12);
-    if (+inp.f && S.t >= b.nextShot && S.t >= S.holdUntil) fireAim(b);
     const fwd = clamp(+inp.mx || 0, -1, 1), str = clamp(+inp.my || 0, -1, 1), ca = Math.cos(b.angle), sa = Math.sin(b.angle);
     const mx = ca * fwd - sa * str, my = sa * fwd + ca * str, ml = Math.hypot(mx, my);
     // walking into a ladder climbs it
@@ -3272,36 +3317,46 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
       if (ml > 0) { const sp = SPEED * (b.crouch ? .45 : 1); b.x += mx / ml * sp * dt; b.y += my / ml * sp * dt; }
       collide(b); vertical(b, dt);
     }
-    b.vx = (b.x - px) / dt; b.vy = (b.y - py) / dt; b.walk += Math.hypot(b.vx, b.vy) * dt;
   }
-  function fireAim(b) {
-    if (b.reloadUntil || b.climbing) return;
+  // where an aimed shot goes: the aim plus the marker's spread, which widens on the move or in the air
+  function aimShot(b, yaw, pitch) {
     const spread = .025 + (Math.hypot(b.vx, b.vy) > 25 || b.vz ? .03 : 0);
-    const ang = b.angle + gauss() * spread, pit = (b.pitch || 0) + gauss() * spread * .5, c = Math.cos(ang), s = Math.sin(ang);
+    return [yaw + gauss() * spread, (pitch || 0) + gauss() * spread * .5];
+  }
+  function shotBall(b, ang, pit) {
+    const c = Math.cos(ang), s = Math.sin(ang);
     let sx = b.x + c * 22 - s * 1.8, sy = b.y + s * 22 + c * 1.8;
     if (!inField(sx, sy, 0) || segBlocked(b.x, b.y, sx, sy)) { sx = b.x + c * (R + 3); sy = b.y + s * (R + 3); }
     // the ball leaves the barrel just under the eye and meets the crosshair line about 200 units out
     const mh = b.z + (b.crouch ? 14 : 20), vz = Math.tan(pit) * BALL_SPEED + (eyeH(b) - mh) / .36 + GRAV * .3;
-    S.balls.push({ x: sx, y: sy, h: mh, vx: c * BALL_SPEED, vy: s * BALL_SPEED, vz, life: 3, owner: b, near: new Set() });
+    return { x: sx, y: sy, h: mh, vx: c * BALL_SPEED, vy: s * BALL_SPEED, vz, life: 3 };
+  }
+  function fireAim(b, ang, pit) {
+    if (b.reloadUntil || b.climbing) return;
+    S.balls.push({ ...shotBall(b, ang, pit), owner: b, near: new Set() });
     b.nextShot = S.t + .22;
     if (b.id === S.camId) recoil = 1;
     gunshot(b); sfx.shot(b.x, b.y, b.id);
     if (--b.ammo <= 0) startReload(b, false);
   }
 
-  // host → room: a compact snapshot about 12 times a second, the roster twice a second, events as they happen
+  // host → room: a compact snapshot 20 times a second over peer links (12 inside Claude), the roster twice a second, events as they happen
   const r1 = v => Math.round(v * 10) / 10;
   function buildSnap() {
-    const d = { e: NET.epoch, m: NET.matchId, t: r1(S.t), cd: r1(S.countdown || 0), wu: S.warm ? r1(Math.max(0, S.warm - S.t)) : 0, b: [], l: [], s: [], n: [], fx: NET.fx.splice(0, 30) };
+    const d = { e: NET.epoch, m: NET.matchId, ht: Math.round(performance.now()), t: r1(S.t), cd: r1(S.countdown || 0), wu: S.warm ? r1(Math.max(0, S.warm - S.t)) : 0, b: [], l: [], s: [], n: [], fx: NET.fx.splice(0, 30) };
     for (const b of S.bots) if (b.alive) {
       const em = emoteOf(b), rl = b.reloadUntil ? clamp(1 - (b.reloadUntil - S.t) / b.reloadDur, 0, 1) : -1;
-      d.b.push([b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.angle * 100) / 100, (b.crouch ? 1 : 0) | (b.climbing ? 2 : 0) | (b.vz ? 4 : 0) | (em === 'dance' ? 8 : em === 'pump' ? 16 : 0),
-        hopperCount(b), Math.round(b.ck * 100) / 100, Math.round(rl * 100) / 100, (b.nades.smoke ? 1 : 0) + (b.nades.paint ? 2 : 0)]);
+      const row = [b.id, r1(b.x), r1(b.y), r1(b.z), Math.round(b.angle * 100) / 100, (b.crouch ? 1 : 0) | (b.climbing ? 2 : 0) | (b.vz ? 4 : 0) | (em === 'dance' ? 8 : em === 'pump' ? 16 : 0),
+        hopperCount(b), Math.round(b.ck * 100) / 100, Math.round(rl * 100) / 100, (b.nades.smoke ? 1 : 0) + (b.nades.paint ? 2 : 0)];
+      // a person's browser needs to know when the host moved them and which of their shots it has fired
+      if (b.human) row.push(b.tp, b.shotN || 0);
+      d.b.push(row);
     }
-    for (const l of S.balls.slice(-40)) d.l.push([r1(l.x), r1(l.y), r1(l.h), l.owner.team, Math.round(l.vx), Math.round(l.vy), Math.round(l.vz)]);
+    for (const l of S.balls.slice(-40)) d.l.push([r1(l.x), r1(l.y), r1(l.h), l.owner.team, Math.round(l.vx), Math.round(l.vy), Math.round(l.vz), l.owner.id]);
     for (const sm of S.smokes) d.s.push([r1(sm.x), r1(sm.y), r1(sm.h), r1(smokeR(sm))]);
     for (const n of S.nades) d.n.push([r1(n.x), r1(n.y), r1(n.h), n.team, n.kind === 'smoke' ? 0 : 1]);
-    while (JSON.stringify(d).length > 3900 && (d.fx.length || d.l.length)) { if (d.fx.length) d.fx.pop(); else d.l.pop(); }
+    let n = JSON.stringify(d).length;
+    while (n > 3900 && (d.fx.length || d.l.length)) { if (d.fx.length) d.fx.pop(); else d.l.pop(); n = JSON.stringify(d).length; }
     return d;
   }
   function buildMeta() {
@@ -3314,7 +3369,7 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     if (NET.mode === 'host') {
       const live = S.phase === 'live' || S.phase === 'countdown' || S.phase === 'intermission';
       NET.snapAcc += real; NET.metaAcc += real;
-      if (NET.snapAcc >= (live ? 1 / 12 : .5)) { NET.snapAcc = 0; room.emit('snap', buildSnap()).catch(() => {}); }
+      if (NET.snapAcc >= (live ? NET.peerCode ? 1 / 20 : 1 / 12 : .5)) { NET.snapAcc = 0; room.emit('snap', buildSnap()).catch(() => {}); }
       if (NET.metaAcc >= .5) { NET.metaAcc = 0; sendMeta(); }
       // chat typed by anyone in the room, relayed by the host
       for (const p of room.peers()) {
@@ -3327,8 +3382,11 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
       const sig = remotePlayers().map(p => p.peer + p.nick).join() + NET.claim;
       if (sig !== NET.rosterSig) { NET.rosterSig = sig; syncClaims(); renderLobby(); }
     } else if (NET.mode === 'client' && NET.joined) {
-      const pk = JSON.stringify(inpPacket());
-      if (pk !== NET.lastInp) { NET.lastInp = pk; room.presence({ inp: JSON.parse(pk) }).catch(() => {}); }
+      const L = NET.local, pk = inpPacket(), now = performance.now();
+      if (L) Object.assign(pk, { p: [r1(L.x), r1(L.y), r1(L.z), (L.crouch ? 1 : 0) | (L.climbing ? 2 : 0) | (L.vz ? 4 : 0)], tp: L.tp, s: NET.shots });
+      const s = JSON.stringify(pk);
+      // at most 30 updates a second; a shot clears the wait so it goes out at once
+      if (s !== NET.lastInp && now - NET.inpAt >= 33) { NET.lastInp = s; NET.inpAt = now; room.presence({ inp: pk }).catch(() => {}); }
     }
     // the host leaving the page is handled by onPeers; this only catches a host that went silent while still listed
     if (NET.mode === 'client' && NET.lastSnapAt && performance.now() - NET.lastSnapAt > 15000) leaveClient('The host stopped sending. Back to a local game.');
@@ -3351,11 +3409,12 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   }
   function becomeClient(msg) {
     NET.mode = 'client'; NET.pendingHost = null; NET.epoch = +msg.data.e; NET.hostPeer = msg.peer; NET.clientMatch = -1; NET.snaps = []; NET.lastSnapAt = performance.now();
+    Object.assign(NET, { offs: [], delay: 150, local: null, myBalls: [] });
     NET.room.presence({ role: NET.claim ? 'player' : 'watch' }).catch(() => {});
     lobbySig = ''; renderLobby(); updateControls();
   }
   function leaveClient(why) {
-    NET.mode = 'local'; NET.hostPeer = null; NET.snaps = []; NET.lastSnapAt = 0;
+    NET.mode = 'local'; NET.hostPeer = null; NET.snaps = []; NET.lastSnapAt = 0; NET.local = null; NET.myBalls = [];
     applyNames(); sysChat(why); renderLobby();
   }
   function applyMeta(d) {
@@ -3391,8 +3450,14 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   function onSnap(msg) {
     const d = msg.data;
     if (NET.mode !== 'client' || !d || typeof d !== 'object' || +d.e !== NET.epoch || !Array.isArray(d.b)) return;
-    NET.snaps.push({ rt: performance.now(), d }); if (NET.snaps.length > 12) NET.snaps.shift();
-    NET.lastSnapAt = performance.now();
+    const now = performance.now(), ht = Number.isFinite(+d.ht) ? +d.ht : now, last = NET.snaps[NET.snaps.length - 1];
+    if (last && ht <= last.ht) return;
+    NET.snaps.push({ ht, d }); if (NET.snaps.length > 30) NET.snaps.shift();
+    NET.lastSnapAt = now;
+    // how far the host's clock sits behind ours: the quickest delivery sets the baseline, and the late tail sets how much buffer we keep
+    const offs = NET.offs; offs.push(now - ht); if (offs.length > 60) offs.shift();
+    NET.lo = Math.min(...offs); NET.late = offs.map(o => o - NET.lo).sort((a, b) => a - b)[Math.floor(offs.length * .9)];
+    if (NET.snaps.length > 1) NET.gap = (ht - NET.snaps[0].ht) / (NET.snaps.length - 1);
     const c = Math.ceil(+d.cd || 0);
     if (S.phase === 'countdown' && c > 0 && c !== lastBeep) { lastBeep = c; sfx.beep(false); }
     if (Array.isArray(d.fx)) d.fx.forEach(applyFx);
@@ -3403,6 +3468,8 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     if (e[0] === 'a' && typeof sfx[e[1]] === 'function' && ['shot', 'splat', 'reload', 'reloaded', 'jump', 'land', 'rung', 'toss', 'clink', 'smoke', 'burst', 'spray'].includes(e[1])) {
       const me = myBot();
       if (e[1] === 'shot' && me && n(e[4]) === me.id) return;
+      // your own jump already sounded on your screen
+      if (e[1] === 'jump' && NET.local && Math.hypot(n(e[2]) - NET.local.x, n(e[3]) - NET.local.y) < 12) return;
       sfx[e[1]](n(e[2]), n(e[3]), e[1] === 'splat' ? !!n(e[4]) : n(e[4]));
     } else if (e[0] === 'g') splat(n(e[1]), n(e[2]), /^#[0-9a-f]{3,8}$/i.test(e[3]) ? e[3] : '#888', clamp(n(e[4]), 1, 40));
     else if (e[0] === 'w' && OBS[n(e[1])]) wallSplat(OBS[n(e[1])], { x: n(e[2]), y: n(e[3]), h: n(e[4]), owner: { team: teamOf(n(e[5])) } }, true);
@@ -3433,43 +3500,92 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     } else if (d.k === 'sys') { S.chat.push({ sys: true, text: String(d.x || '').slice(0, 200), t: S.t, rt: rt() }); chatDirty = true; }
     else if (d.k === 'feed') { S.feed.unshift({ t: S.t, sys: String(d.x || '').slice(0, 200) }); renderFeed(); }
   }
-  // client: render the host's match slightly in the past, interpolated between snapshots
+  // client: everyone else is drawn slightly in the past on the host's clock, just far enough back to ride out network jitter
   const lerpAng = (a, b, f) => { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return a + d * f; };
   function clientFrame(real) {
-    const snaps = NET.snaps; if (!snaps.length) return;
-    const now = performance.now(), at = now - 120;
-    let A = snaps[0], B = snaps[snaps.length - 1];
-    for (let i = 0; i < snaps.length - 1; i++) if (snaps[i].rt <= at && snaps[i + 1].rt >= at) { A = snaps[i]; B = snaps[i + 1]; break; }
-    const f = B.rt > A.rt ? clamp((at - A.rt) / (B.rt - A.rt), 0, 1) : 1;
-    S.t = +A.d.t + (+B.d.t - +A.d.t) * f;
+    const snaps = NET.snaps, n = snaps.length; if (!n) return;
+    const now = performance.now();
+    NET.delay += (clamp(NET.gap + NET.late + 10, 50, 400) - NET.delay) * Math.min(1, real * 2);
+    const at = now - NET.lo - NET.delay;
+    let i = n - 1; while (i > 0 && snaps[i].ht > at) i--;
+    // past the newest snapshot, motion carries on for a moment instead of freezing
+    if (i === n - 1 && n > 1) i = n - 2;
+    const A = snaps[i], B = snaps[Math.min(i + 1, n - 1)], span = B.ht - A.ht;
+    const f = span > 0 ? clamp((at - A.ht) / span, 0, 1 + 100 / span) : 1, f1 = Math.min(f, 1);
+    S.t = +A.d.t + (+B.d.t - +A.d.t) * f1;
     if (S.phase === 'countdown') S.countdown = +B.d.cd || 0;
     S.warm = +B.d.wu > 0 ? S.t + +B.d.wu : 0;
+    // your own player moves the moment you press a key: your browser runs your movement and the host takes its word for it
+    const me = myBot(), row = me && snaps[n - 1].d.b.find(r => r[0] === me.id);
+    let L = NET.local;
+    if (me && me.alive && NET.joined && row && row.length > 11) {
+      if (!L || L.id !== me.id || L.tp !== +row[10]) {
+        L = NET.local = { id: me.id, tp: +row[10], x: +row[1], y: +row[2], z: +row[3], vx: 0, vy: 0, vz: 0, ck: 0, crouch: false, climbing: false, rung: 0, angle: INP.yaw, surf: null };
+        L.surf = L.z > 0 ? surfaceAt(L.x, L.y, L.z) : null; NET.shotN = Math.max(NET.shotN, +row[11] || 0); NET.lastJ = INP.j;
+      }
+    } else L = NET.local = null;
     const ra = new Map(A.d.b.map(r => [r[0], r]));
     for (const rb of B.d.b) {
       const b = S.bots[rb[0]]; if (!b || !Array.isArray(rb)) continue;
-      const a = ra.get(rb[0]) || rb, L = i => +a[i] + (+rb[i] - +a[i]) * f, px = b.x, py = b.y;
-      b.x = L(1); b.y = L(2); b.z = L(3); b.angle = lerpAng(+a[4], +rb[4], f);
-      const fl = +rb[5]; b.crouch = !!(fl & 1); b.climbing = !!(fl & 2); b.vz = fl & 4 ? 1 : 0;
+      const a = ra.get(rb[0]) || rb, lp = (i, g) => +a[i] + (+rb[i] - +a[i]) * g, px = b.x, py = b.y;
+      if (!(L && b === me)) {
+        b.x = lp(1, f); b.y = lp(2, f); b.z = Math.max(0, lp(3, f1)); b.angle = lerpAng(+a[4], +rb[4], f);
+        const fl = +rb[5]; b.crouch = !!(fl & 1); b.climbing = !!(fl & 2); b.vz = fl & 4 ? 1 : 0; b.ck = lp(7, f1);
+        if (real > 0) { b.vx = (b.x - px) / real; b.vy = (b.y - py) / real; b.walk += Math.hypot(b.x - px, b.y - py); }
+      }
+      const fl = +rb[5];
       b.emote = fl & 8 ? { kind: 'dance', until: Infinity } : fl & 16 ? { kind: 'pump', until: Infinity } : (S.inter?.survivors.includes(b) ? b.emote : null);
-      b.ammo = +rb[6]; b.ck = L(7); b.reloadDur = 1; b.reloadUntil = +rb[8] >= 0 ? S.t + 1 - +rb[8] : 0;
+      b.ammo = +rb[6]; b.reloadDur = 1; b.reloadUntil = +rb[8] >= 0 ? S.t + 1 - +rb[8] : 0;
       b.nades = { smoke: +rb[9] & 1, paint: +rb[9] >> 1 & 1 };
-      if (real > 0) { b.vx = (b.x - px) / real; b.vy = (b.y - py) / real; b.walk += Math.hypot(b.x - px, b.y - py); }
     }
-    const N = snaps[snaps.length - 1], age = (now - N.rt) / 1000;
-    S.balls = N.d.l.map(r => ({ x: +r[0] + +r[4] * age, y: +r[1] + +r[5] * age, h: +r[2] + +r[6] * age - .5 * GRAV * age * age, owner: { team: teamOf(r[3]) }, vx: +r[4], vy: +r[5] }));
-    S.smokes = N.d.s.map(r => ({ x: +r[0], y: +r[1], h: +r[2], r: +r[3] }));
-    S.nades = N.d.n.map(r => ({ x: +r[0], y: +r[1], h: +r[2], team: teamOf(r[3]), kind: +r[4] ? 'paint' : 'smoke' }));
+    if (L) {
+      const px = L.x, py = L.y;
+      if (S.phase === 'live') {
+        L.angle = INP.yaw;
+        walkHuman(L, inpPacket(), INP.j !== NET.lastJ, real);
+        // players bump each other on the host, so they do here too
+        for (const o of S.bots) {
+          if (!o.alive || o === me || o.climbing || L.climbing || Math.abs(o.z - L.z) >= 20) continue;
+          const dx = L.x - o.x, dy = L.y - o.y, d = Math.hypot(dx, dy);
+          if (d < R * 2 && d > .01) { L.x = o.x + dx / d * R * 2; L.y = o.y + dy / d * R * 2; collide(L); }
+        }
+        // your shots leave at once too: the host fires the same shot from the same spot and decides what it hits
+        const ack = +row[11] || 0, left = +row[8] >= 0 ? 0 : +row[6] - (NET.shotN - ack);
+        if (INP.fire && left > 0 && !L.climbing && now >= NET.nextShotAt) {
+          const [ang, pit] = aimShot(L, INP.yaw, INP.pitch);
+          NET.nextShotAt = now + 220; NET.inpAt = 0;
+          NET.shots = [...NET.shots.filter(q => q[0] > ack), [++NET.shotN, Math.round(ang * 1000) / 1000, Math.round(pit * 1000) / 1000]].slice(-4);
+          NET.myBalls.push({ ...shotBall(L, ang, pit), owner: me });
+          recoil = 1; sfx.shot(L.x, L.y, me.id);
+        }
+      }
+      NET.lastJ = INP.j;
+      if (real > 0) { L.vx = (L.x - px) / real; L.vy = (L.y - py) / real; }
+      me.walk += Math.hypot(L.x - me.x, L.y - me.y);
+      Object.assign(me, { x: L.x, y: L.y, z: L.z, vx: L.vx, vy: L.vy, vz: L.vz, crouch: L.crouch, climbing: L.climbing, ck: L.ck, angle: INP.yaw });
+    }
+    flyLocal(real);
+    const age = Math.max(0, at - A.ht) / 1000, mine = L ? me.id : -1;
+    S.balls = A.d.l.filter(r => +r[7] !== mine).map(r => ({ x: +r[0] + +r[4] * age, y: +r[1] + +r[5] * age, h: +r[2] + +r[6] * age - .5 * GRAV * age * age, owner: { team: teamOf(r[3]) }, vx: +r[4], vy: +r[5] }))
+      .filter(l => l.h > 0).concat(NET.myBalls);
+    S.smokes = A.d.s.map(r => ({ x: +r[0], y: +r[1], h: +r[2], r: +r[3] }));
+    const na = A.d.n, nb = na.length === B.d.n.length ? B.d.n : na;
+    S.nades = na.map((r, j) => { const q = nb[j], l = k => +r[k] + (+q[k] - +r[k]) * f1; return { x: l(0), y: l(1), h: l(2), team: teamOf(r[3]), kind: +r[4] ? 'paint' : 'smoke' }; });
     NET.recAcc += real; if (NET.recAcc >= 1 / 30) { NET.recAcc = 0; record(); }
-    // your own marker moves at once on your screen and eases toward where the host says it is
-    const me = myBot();
-    if (me && me.alive && NET.joined) {
-      if (!NET.pred || Math.hypot(NET.pred.x - me.x, NET.pred.y - me.y) > 45) NET.pred = { x: me.x, y: me.y, z: me.z };
-      const p = inpPacket(), ca = Math.cos(INP.yaw), sa = Math.sin(INP.yaw), mx = ca * p.mx - sa * p.my, my = sa * p.mx + ca * p.my, ml = Math.hypot(mx, my);
-      if (ml > 0 && !me.climbing) { const sp = SPEED * (p.c ? .45 : 1); NET.pred.x += mx / ml * sp * real; NET.pred.y += my / ml * sp * real; }
-      NET.pred.z = me.z; collide(NET.pred);
-      NET.pred.x += (me.x - NET.pred.x) * Math.min(1, real * 5); NET.pred.y += (me.y - NET.pred.y) * Math.min(1, real * 5);
-      if (INP.fire && me.ammo > 0 && me.reloadUntil === 0 && now > NET.nextRecoil) { NET.nextRecoil = now + 220; recoil = 1; sfx.shot(NET.pred.x, NET.pred.y, me.id); }
-    } else NET.pred = null;
+  }
+  // your own paint flies the moment you fire and stops at the first thing in its way; the host's copy decides what it hit
+  function flyLocal(dt) {
+    NET.myBalls = NET.myBalls.filter(l => {
+      const sub = Math.max(2, Math.round(dt * 120));
+      for (let k = 0; k < sub; k++) {
+        const h = dt / sub;
+        l.x += l.vx * h; l.y += l.vy * h; l.vz -= GRAV * h; l.h += l.vz * h; l.life -= h;
+        const o = obstacleAt(l.x, l.y), fl = surfaceAt(l.x, l.y, l.h);
+        if (l.life <= 0 || !inField(l.x, l.y, 0) || (o && l.h < o.z) || l.h <= (fl ? fl.z : 0)) return false;
+        if (S.bots.some(b => b.alive && b !== l.owner && Math.hypot(b.x - l.x, b.y - l.y) < HIT_R && l.h >= b.z - 1 && l.h <= bodyTop(b) + 1)) return false;
+      }
+      return true;
+    });
   }
 
   // ─── input: keyboard and mouse for whoever joined as a player ───
@@ -3528,19 +3644,27 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   }
   const loadPeerJs = () => window.Peer ? Promise.resolve() : new Promise((ok, no) => { const el = document.createElement('script'); el.src = PEERJS_URL; el.onload = ok; el.onerror = no; document.head.append(el); });
   function peerRoom(code, onState) {
-    const hubId = 'standup-paintball-' + code, me = 'u' + Math.random().toString(36).slice(2, 10), handlers = {}, peerFns = [];
-    let peer = null, hub = false, hubConn = null, closed = false, myPres = {}, table = new Map([[me, myPres]]), lastIds = new Set([me]);
+    const hubId = 'standup-paintball-2-' + code, me = 'u' + Math.random().toString(36).slice(2, 10), handlers = {}, peerFns = [];
+    let peer = null, hub = false, hubConn = null, closed = false, myPres = {}, table = new Map([[me, myPres]]), lastIds = new Set([me]), seen = null, hostUid = null;
     const conns = new Map();
-    const view = () => [...table].map(([id, presence]) => ({ peer: id, presence, sameTab: id === me }));
+    // the host reads the room every simulation step, so the list is rebuilt only after it changes
+    const view = () => seen ||= [...table].map(([id, presence]) => ({ peer: id, presence, sameTab: id === me }));
     function changed() {
+      seen = null;
       const now = view(), ids = new Set(now.map(p => p.peer));
       const joined = now.filter(p => !lastIds.has(p.peer)), left = [...lastIds].filter(id => !ids.has(id)).map(id => ({ peer: id, presence: {}, sameTab: false }));
       lastIds = ids;
       for (const f of peerFns) f({ peers: now, joined, left });
     }
     const deliver = (topic, data, from) => { for (const f of handlers[topic] || []) f({ topic, data, peer: from, sameTab: from === me }); };
-    const send = (c, m) => { if (c && c.open) try { c.send(m); } catch {} };
-    const relay = (m, except) => { for (const [id, c] of conns) if (id !== except) send(c, m); };
+    // messages travel as JSON text, encoded once however many people they go to; a snapshot is skipped for anyone whose
+    // link is backed up, since the next one replaces it and a queue of old ones is what makes a match feel late
+    const send = (c, m, skippable) => { if (c && c.open && !(skippable && c.dataChannel && c.dataChannel.bufferedAmount > 65536)) try { c.send(m); } catch {} };
+    const relay = (m, except, skippable) => { for (const [id, c] of conns) if (id !== except) send(c, m, skippable); };
+    const parse = raw => { try { const m = JSON.parse(raw); return m && typeof m === 'object' ? m : null; } catch { return null; } };
+    // a player's controls matter only to whoever runs the match: they go to the host alone and leave the room list untouched
+    const inputOnly = patch => Object.keys(patch).length === 1 && 'inp' in patch;
+    const toHost = m => { if (hostUid && hostUid !== me) send(conns.get(hostUid), m); };
     const opts = () => ({ config: { iceServers: iceServers() } });
     function claim() {
       if (closed) return;
@@ -3549,16 +3673,22 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
       p.on('open', () => { hub = true; onState('open'); });
       p.on('connection', conn => {
         let uid = null;
-        conn.on('data', m => {
-          if (!m || typeof m !== 'object') return;
+        conn.on('data', raw => {
+          const m = parse(raw); if (!m) return;
           if (m.k === 'hello' && typeof m.uid === 'string') {
             uid = m.uid.slice(0, 16); conns.set(uid, conn); table.set(uid, m.presence && typeof m.presence === 'object' ? m.presence : {});
-            send(conn, { k: 'roster', peers: [...table] }); relay({ k: 'pres', peer: uid, presence: table.get(uid) }, uid); changed();
+            send(conn, JSON.stringify({ k: 'roster', peers: [...table] })); relay(JSON.stringify({ k: 'pres', peer: uid, presence: table.get(uid) }), uid); changed();
           } else if (!uid) return;
-          else if (m.k === 'emit' && typeof m.topic === 'string') { relay({ k: 'emit', topic: m.topic, data: m.data, peer: uid }, uid); deliver(m.topic, m.data, uid); }
-          else if (m.k === 'pres' && m.patch && typeof m.patch === 'object') { const pr = { ...(table.get(uid) || {}), ...m.patch }; table.set(uid, pr); relay({ k: 'pres', peer: uid, presence: pr }, uid); changed(); }
+          else if (m.k === 'emit' && typeof m.topic === 'string') {
+            if (m.topic === 'meta') hostUid = uid;
+            relay(JSON.stringify({ k: 'emit', topic: m.topic, data: m.data, peer: uid }), uid, m.topic === 'snap'); deliver(m.topic, m.data, uid);
+          } else if (m.k === 'pres' && m.patch && typeof m.patch === 'object') {
+            const pr = { ...(table.get(uid) || {}), ...m.patch }; table.set(uid, pr); seen = null;
+            if (inputOnly(m.patch)) toHost(JSON.stringify({ k: 'pres', peer: uid, presence: pr, q: 1 }));
+            else { relay(JSON.stringify({ k: 'pres', peer: uid, presence: pr }), uid); changed(); }
+          }
         });
-        const gone = () => { if (!uid || conns.get(uid) !== conn) return; conns.delete(uid); table.delete(uid); relay({ k: 'left', peer: uid }); changed(); };
+        const gone = () => { if (!uid || conns.get(uid) !== conn) return; conns.delete(uid); table.delete(uid); relay(JSON.stringify({ k: 'left', peer: uid })); changed(); };
         conn.on('close', gone); conn.on('error', gone);
       });
       p.on('disconnected', () => { if (!closed) try { p.reconnect(); } catch {} });
@@ -3572,13 +3702,13 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
       hub = false;
       const p = peer = new Peer(opts());
       p.on('open', () => {
-        const c = hubConn = p.connect(hubId, { reliable: true });
-        c.on('open', () => { send(c, { k: 'hello', uid: me, presence: myPres }); onState('open'); });
-        c.on('data', m => {
-          if (!m || typeof m !== 'object') return;
+        const c = hubConn = p.connect(hubId, { reliable: true, serialization: 'raw' });
+        c.on('open', () => { send(c, JSON.stringify({ k: 'hello', uid: me, presence: myPres })); onState('open'); });
+        c.on('data', raw => {
+          const m = parse(raw); if (!m) return;
           if (m.k === 'roster' && Array.isArray(m.peers)) { table = new Map(m.peers); table.set(me, myPres); changed(); }
           else if (m.k === 'emit') deliver(m.topic, m.data, m.peer);
-          else if (m.k === 'pres') { table.set(m.peer, m.presence); changed(); }
+          else if (m.k === 'pres') { table.set(m.peer, m.presence); seen = null; if (!m.q) changed(); }
           else if (m.k === 'left') { table.delete(m.peer); changed(); }
         });
         // the relay went away: whoever claims its id first becomes the new relay and the rest reconnect to it
@@ -3591,12 +3721,20 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     claim();
     return {
       code,
-      emit(topic, data) { if (hub) relay({ k: 'emit', topic, data, peer: me }); else send(hubConn, { k: 'emit', topic, data }); return Promise.resolve(); },
+      emit(topic, data) {
+        if (hub) { if (topic === 'meta') hostUid = me; relay(JSON.stringify({ k: 'emit', topic, data, peer: me }), null, topic === 'snap'); }
+        else send(hubConn, JSON.stringify({ k: 'emit', topic, data }), topic === 'snap');
+        return Promise.resolve();
+      },
       on(topic, f) { (handlers[topic] ||= []).push(f); },
       presence(patch) {
-        myPres = { ...myPres, ...patch }; table.set(me, myPres);
-        if (hub) relay({ k: 'pres', peer: me, presence: myPres }); else send(hubConn, { k: 'pres', patch });
-        changed(); return Promise.resolve();
+        myPres = { ...myPres, ...patch }; table.set(me, myPres); seen = null;
+        const quiet = inputOnly(patch);
+        if (!hub) send(hubConn, JSON.stringify({ k: 'pres', patch }));
+        else if (quiet) toHost(JSON.stringify({ k: 'pres', peer: me, presence: myPres, q: 1 }));
+        else relay(JSON.stringify({ k: 'pres', peer: me, presence: myPres }));
+        if (!quiet) changed();
+        return Promise.resolve();
       },
       peers: view,
       onPeers(f) { peerFns.push(f); },

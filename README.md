@@ -85,6 +85,14 @@ keep the host's and the room creator's tabs open. On strict networks add a
 TURN relay the same way as Pixel Pitch: `paintball/?turn=USER:CREDENTIAL@host`
 (it's remembered and carried in the share link).
 
+Your own movement, jumps and shots run in your browser, so they respond
+instantly; the host takes your browser's word for where you are, fires the
+same shots, and decides what they hit. Everyone else is drawn about a tenth
+of a second in the past so their motion stays smooth through network jitter.
+Lag is lowest when the person who created the room also hosts, since every
+message then takes one hop instead of two. Everyone in a room needs the same
+version of the page: if someone can't see the others, have everyone reload.
+
 Saved bot brains live in each browser. Announcer callouts play the clips in
 `paintball/clips/`.
 
