@@ -34,6 +34,7 @@
   --accent: #7aa2e6; --magenta: #f0619b; --tangerine: #f6a640; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.45; }
 .wrap { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-bottom: 18px; }
@@ -370,6 +371,13 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
         <ul class="peers" id="netPeers" hidden></ul>
         <h3 class="claims-title">Who are you playing as?</h3>
         <div class="claims" id="claims" role="group" aria-label="Pick who you are playing as"></div>
+        <div class="net-row">
+          <button class="btn" id="netCreate" hidden>Create online room</button>
+        </div>
+        <div class="net-row" id="netLinkRow" hidden>
+          <input id="netLink" readonly aria-label="Room link to share">
+          <button class="btn ghost" id="netCopy">Copy link</button>
+        </div>
         <div class="net-row">
           <button class="btn ghost" id="netHost" hidden>Host this match online</button>
           <button class="btn ghost" id="netSwitch" hidden>Watch the online match</button>
@@ -3501,6 +3509,107 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
   }
 
   // ─── lobby ───
+  // ─── peer-to-peer rooms: outside Claude, the same room interface runs over PeerJS (WebRTC) ───
+  // The first browser in a room claims the room's broker id and relays every message to the rest; if it leaves, the
+  // others race to claim the id again. Members keep a stable id of their own, so who-is-who survives a relay change.
+  // Hosting the match is separate: anyone in the room can host, and it runs exactly as it does inside Claude.
+  const PEERJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js', TURN_KEY = 'standup-paintball-turn';
+  const roomCode = () => { const a = 'abcdefghjkmnpqrstuvwxyz23456789'; let c = ''; for (let i = 0; i < 6; i++) c += a[Math.random() * a.length | 0]; return c; };
+  // strict networks (VPNs, offices) need a TURN relay; ?turn=USER:CREDENTIAL@host is remembered and carried in the share link
+  function turnSpec() {
+    let t = new URLSearchParams(location.search).get('turn');
+    try { if (t) localStorage.setItem(TURN_KEY, t); else t = localStorage.getItem(TURN_KEY); } catch {}
+    return t;
+  }
+  function iceServers() {
+    const ice = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }], m = /^(.+):(.+)@([^@]+)$/.exec(turnSpec() || '');
+    if (m) ice.push({ urls: [`turn:${m[3]}:80`, `turn:${m[3]}:443`, `turns:${m[3]}:443?transport=tcp`], username: m[1], credential: m[2] });
+    return ice;
+  }
+  const loadPeerJs = () => window.Peer ? Promise.resolve() : new Promise((ok, no) => { const el = document.createElement('script'); el.src = PEERJS_URL; el.onload = ok; el.onerror = no; document.head.append(el); });
+  function peerRoom(code, onState) {
+    const hubId = 'standup-paintball-' + code, me = 'u' + Math.random().toString(36).slice(2, 10), handlers = {}, peerFns = [];
+    let peer = null, hub = false, hubConn = null, closed = false, myPres = {}, table = new Map([[me, myPres]]), lastIds = new Set([me]);
+    const conns = new Map();
+    const view = () => [...table].map(([id, presence]) => ({ peer: id, presence, sameTab: id === me }));
+    function changed() {
+      const now = view(), ids = new Set(now.map(p => p.peer));
+      const joined = now.filter(p => !lastIds.has(p.peer)), left = [...lastIds].filter(id => !ids.has(id)).map(id => ({ peer: id, presence: {}, sameTab: false }));
+      lastIds = ids;
+      for (const f of peerFns) f({ peers: now, joined, left });
+    }
+    const deliver = (topic, data, from) => { for (const f of handlers[topic] || []) f({ topic, data, peer: from, sameTab: from === me }); };
+    const send = (c, m) => { if (c && c.open) try { c.send(m); } catch {} };
+    const relay = (m, except) => { for (const [id, c] of conns) if (id !== except) send(c, m); };
+    const opts = () => ({ config: { iceServers: iceServers() } });
+    function claim() {
+      if (closed) return;
+      onState('connecting');
+      const p = peer = new Peer(hubId, opts());
+      p.on('open', () => { hub = true; onState('open'); });
+      p.on('connection', conn => {
+        let uid = null;
+        conn.on('data', m => {
+          if (!m || typeof m !== 'object') return;
+          if (m.k === 'hello' && typeof m.uid === 'string') {
+            uid = m.uid.slice(0, 16); conns.set(uid, conn); table.set(uid, m.presence && typeof m.presence === 'object' ? m.presence : {});
+            send(conn, { k: 'roster', peers: [...table] }); relay({ k: 'pres', peer: uid, presence: table.get(uid) }, uid); changed();
+          } else if (!uid) return;
+          else if (m.k === 'emit' && typeof m.topic === 'string') { relay({ k: 'emit', topic: m.topic, data: m.data, peer: uid }, uid); deliver(m.topic, m.data, uid); }
+          else if (m.k === 'pres' && m.patch && typeof m.patch === 'object') { const pr = { ...(table.get(uid) || {}), ...m.patch }; table.set(uid, pr); relay({ k: 'pres', peer: uid, presence: pr }, uid); changed(); }
+        });
+        const gone = () => { if (!uid || conns.get(uid) !== conn) return; conns.delete(uid); table.delete(uid); relay({ k: 'left', peer: uid }); changed(); };
+        conn.on('close', gone); conn.on('error', gone);
+      });
+      p.on('disconnected', () => { if (!closed) try { p.reconnect(); } catch {} });
+      p.on('error', e => {
+        if (e.type === 'unavailable-id') { try { p.destroy(); } catch {} join(); }
+        else if (!hub) { try { p.destroy(); } catch {} onState('error', e.type); setTimeout(claim, 4000); }
+      });
+    }
+    function join() {
+      if (closed) return;
+      hub = false;
+      const p = peer = new Peer(opts());
+      p.on('open', () => {
+        const c = hubConn = p.connect(hubId, { reliable: true });
+        c.on('open', () => { send(c, { k: 'hello', uid: me, presence: myPres }); onState('open'); });
+        c.on('data', m => {
+          if (!m || typeof m !== 'object') return;
+          if (m.k === 'roster' && Array.isArray(m.peers)) { table = new Map(m.peers); table.set(me, myPres); changed(); }
+          else if (m.k === 'emit') deliver(m.topic, m.data, m.peer);
+          else if (m.k === 'pres') { table.set(m.peer, m.presence); changed(); }
+          else if (m.k === 'left') { table.delete(m.peer); changed(); }
+        });
+        // the relay went away: whoever claims its id first becomes the new relay and the rest reconnect to it
+        const lost = () => { if (closed || hubConn !== c) return; hubConn = null; onState('connecting'); try { p.destroy(); } catch {} setTimeout(claim, 300 + Math.random() * 1200); };
+        c.on('close', lost); c.on('error', lost);
+      });
+      p.on('disconnected', () => { if (!closed) try { p.reconnect(); } catch {} });
+      p.on('error', e => { if (e.type === 'peer-unavailable') { try { p.destroy(); } catch {} setTimeout(claim, 300 + Math.random() * 700); } else onState('error', e.type); });
+    }
+    claim();
+    return {
+      code,
+      emit(topic, data) { if (hub) relay({ k: 'emit', topic, data, peer: me }); else send(hubConn, { k: 'emit', topic, data }); return Promise.resolve(); },
+      on(topic, f) { (handlers[topic] ||= []).push(f); },
+      presence(patch) {
+        myPres = { ...myPres, ...patch }; table.set(me, myPres);
+        if (hub) relay({ k: 'pres', peer: me, presence: myPres }); else send(hubConn, { k: 'pres', patch });
+        changed(); return Promise.resolve();
+      },
+      peers: view,
+      onPeers(f) { peerFns.push(f); },
+      leave() { closed = true; try { peer.destroy(); } catch {} },
+    };
+  }
+  const shareLink = code => { const u = new URL(location.href); u.search = '?room=' + code; const t = turnSpec(); if (t) u.searchParams.set('turn', t); u.hash = ''; return u.toString(); };
+  function openPeerRoom(code) {
+    NET.peerCode = code; NET.peerState = 'connecting'; renderLobby();
+    loadPeerJs().then(() => {
+      attachRoom(peerRoom(code, (st, why) => { NET.peerState = st; NET.peerWhy = why; lobbySig = ''; renderLobby(); }));
+    }).catch(() => { NET.peerState = 'error'; NET.peerWhy = 'load'; lobbySig = ''; renderLobby(); });
+  }
   let lobbySig = '';
   function renderLobby() {
     const box = $('#online'); if (!box || !S || TRAIN.on) return;
@@ -3513,12 +3622,13 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     if (NET.mode === 'host') st.textContent = `You're hosting. Everyone picks who they're playing as below; press Start match when they're ready. Names nobody picks are played by bots.`;
     else if (NET.mode === 'client') st.textContent = (NET.hostNick === 'Host' ? 'An online match is open. ' : `${NET.hostNick} is hosting. `) + (me ? `You're playing as ${me.name}.` : NET.claim ? `${NET.claim} is already taken. Pick another name.` : 'Pick who you are playing as, then wait for the host to start.');
     else if (NET.pendingHost) st.textContent = 'Someone is hosting an online match. Finish this game or switch now.';
-    else if (!NET.room) st.textContent = 'Online play isn\'t available in this view. Pick yourself to play against the bots.';
+    else if (NET.peerCode && NET.peerState !== 'open') st.textContent = NET.peerState === 'error' ? (NET.peerWhy === 'load' ? 'Online play couldn\'t load. Check your connection and reload.' : 'Can\'t reach the room right now; retrying…') : 'Connecting to the room…';
+    else if (!NET.room) st.textContent = window.claude ? 'Online play isn\'t available in this view. Pick yourself to play against the bots.' : 'Create an online room and share the link so your team can join, or pick yourself to play against the bots.';
     else st.textContent = peers.length > 1 ? 'Nobody is hosting yet. Host the match so the others here can pick their names and play.' : 'Share this page with your team, then host the match so they can pick their names and join. You can also pick yourself and play the bots.';
     const ul = $('#netPeers'); ul.replaceChildren();
     for (const p of peers) {
       const li = document.createElement('li'), n = document.createElement('span'), r = document.createElement('span');
-      n.textContent = (p.sameTab ? 'You' : (p.by && NET.names[p.by]?.name) || 'Someone') + (p.guest ? ' · guest' : '');
+      n.textContent = (p.sameTab ? 'You' : (p.by && NET.names[p.by]?.name) || (claimOf(p) || p.presence?.nick || 'Someone')) + (p.guest ? ' · guest' : '');
       r.className = 'role';
       r.textContent = p.peer === NET.hostPeer || (p.sameTab && NET.mode === 'host') ? (claimOf(p) ? `Host · ${claimOf(p)}` : 'Host') : claimOf(p) ? `Playing ${claimOf(p)}` : 'Watching';
       li.append(n, r); ul.append(li);
@@ -3542,6 +3652,9 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     const hb = $('#netHost'); hb.hidden = !NET.room || NET.mode === 'client';
     hb.textContent = NET.mode === 'host' ? 'Stop hosting' : 'Host this match online';
     $('#netSwitch').hidden = !NET.pendingHost;
+    $('#netCreate').hidden = !!window.claude || !!NET.peerCode;
+    $('#netLinkRow').hidden = !NET.peerCode;
+    if (NET.peerCode) $('#netLink').value = shareLink(NET.peerCode);
   }
   // names come from the viewer's own organization directory, resolved fresh on every render
   function resolveNames(peers) {
@@ -3587,7 +3700,14 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
     const room = window.claude?.use ? await window.claude.use('room').catch(() => null) : null;
     NET.user = window.claude?.use ? await window.claude.use('user').catch(() => null) : null;
     renderLobby();
-    if (!room) return;
+    if (!room) {
+      const code = new URLSearchParams(location.search).get('room');
+      if (!window.claude && code && /^[a-z0-9]{4,16}$/.test(code)) openPeerRoom(code);
+      return;
+    }
+    attachRoom(room);
+  })();
+  function attachRoom(room) {
     NET.room = room;
     room.on('meta', onMeta); room.on('snap', onSnap); room.on('evt', onEvt);
     room.onPeers(ch => {
@@ -3596,9 +3716,21 @@ textarea { width: 100%; min-height: 160px; resize: vertical; font: 500 13px/1.5 
       if (NET.mode === 'host' && ch.joined.some(p => !p.sameTab)) sendMeta();
       renderLobby();
     });
-    room.presence({ nick: 'Guest', role: 'watch' }).catch(() => {});
+    room.presence({ nick: NET.claim || 'Guest', role: NET.claim ? 'player' : 'watch', claim: NET.claim || undefined }).catch(() => {});
     renderLobby();
-  })();
+  }
+  if (!IN_WORKER) {
+    $('#netCreate').addEventListener('click', () => {
+      const code = roomCode();
+      history.replaceState(null, '', shareLink(code));
+      openPeerRoom(code);
+    });
+    $('#netCopy').addEventListener('click', async () => {
+      const btn = $('#netCopy'); $('#netLink').select();
+      try { await navigator.clipboard.writeText($('#netLink').value); btn.textContent = 'Copied'; } catch { btn.textContent = 'Copy failed'; }
+      setTimeout(() => { btn.textContent = 'Copy link'; }, 1500);
+    });
+  }
 
   // ─── page UI ───
   const pips = $('#ammoPips');
