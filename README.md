@@ -1,6 +1,6 @@
 # 🕹️ F1V Arcade
 
-Two browser games, no build step — static files only. The root `index.html`
+Three browser games, no build step — static files only. The root `index.html`
 is a launcher that picks between them.
 
 ## 🐵 Monkey Escape (`monkey/`)
@@ -53,6 +53,31 @@ If the lobby says the players found each other but can't connect:
 
    The setting is remembered in the browser and automatically included in
    the share link, so your opponent gets the relay too.
+
+## 🎯 Standup Paintball (`paintball/`)
+
+A 3D, bot-driven paintball match that decides who runs standup: paste the
+team's names, they're split into two teams, and the last person standing
+wins. One hit eliminates; when a team is wiped out, the survivors are
+reshuffled into new teams until one player is left. Built with
+[Three.js](https://threejs.org) r128.
+
+**Watching:** the camera follows the leader (click a name to follow
+someone else), with a kill cam, minimap, kill feed, bot chat, emotes and
+wall sprays. **Playing:** pick your name to take over that bot — WASD to
+move, mouse to aim (click the game to lock it), click to fire, Space
+jumps, C crouches, R reloads, Q smoke, G paint grenade, T spray.
+
+**Bot training:** the Bot training panel tunes the bots by playing
+thousands of headless matches on background Web Workers, separately for
+team matches and free-for-all. "Settings" tunes 26 behavior settings with
+SPSA, "Neural net" trains three small networks on top with evolution
+strategies, and a sequential test only promotes a brain that beats the
+current champion. Saved brains are kept in the browser.
+
+Online play and the shared brain library rely on the Claude artifact
+runtime, so they're off when the page is served from here; everything else
+runs as-is. Announcer callouts play the clips in `paintball/clips/`.
 
 ## Run locally
 
