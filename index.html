@@ -4,130 +4,215 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Games</title>
+<meta name="description" content="Small browser games. No installs, no accounts — pick one and play.">
+<meta name="theme-color" content="#0a0d14">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0d14'/%3E%3Cpath d='M9 13h14a4 4 0 0 1 3.8 5.2l-.9 3a3 3 0 0 1-5 1.2L19 21h-6l-1.9 1.4a3 3 0 0 1-5-1.2l-.9-3A4 4 0 0 1 9 13z' fill='%23e8ecf4'/%3E%3Cpath d='M11 15v4M9 17h4' stroke='%230a0d14' stroke-width='1.6'/%3E%3Ccircle cx='21' cy='16.5' r='1.1' fill='%230a0d14'/%3E%3Ccircle cx='23.5' cy='18.5' r='1.1' fill='%230a0d14'/%3E%3C/svg%3E">
 <style>
+  :root {
+    --bg: #0a0d14;
+    --surface: #11151f;
+    --line: rgba(255, 255, 255, 0.09);
+    --text: #e8ecf4;
+    --muted: #8d97ab;
+    --radius: 18px;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { color-scheme: dark; background: var(--bg); }
   body {
     min-height: 100vh;
-    background: #0b1020;
-    color: #eef2ff;
-    font-family: 'Courier New', monospace;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 34px;
-    padding: 24px;
-  }
-  h1 {
-    font-size: clamp(26px, 6vw, 48px);
-    letter-spacing: 6px;
-    text-transform: uppercase;
-    color: #fbbf24;
-    text-shadow: 3px 3px 0 #7c2d12;
-  }
-  .subtitle { color: #93a0c9; font-size: 14px; letter-spacing: 2px; margin-top: -22px; }
-  .games {
-    display: flex;
-    gap: 24px;
-    flex-wrap: wrap;
-    justify-content: center;
-    width: 100%;
-    max-width: 1640px;
-  }
-  /* two by two on laptops; all four across only on wide screens */
-  @media (max-width: 1699px) { .games { max-width: 820px; } }
-  a.game {
-    flex: 1 1 300px;
-    max-width: 380px;
-    background: #141b33;
-    border: 3px solid #1c2547;
-    padding: 28px 22px 24px;
-    text-decoration: none;
-    color: inherit;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    transition: transform .08s;
-  }
-  a.game:hover { transform: translateY(-4px); }
-  a.game .icon { font-size: 64px; line-height: 1; }
-  a.game h2 { font-size: 20px; letter-spacing: 3px; text-transform: uppercase; }
-  a.game p { color: #93a0c9; font-size: 13px; text-align: center; line-height: 1.6; }
-  a.game .tag {
-    font-size: 11px;
-    font-weight: bold;
-    letter-spacing: 2px;
-    padding: 4px 12px;
-    border: 2px solid;
-  }
-  a.game.monkey:hover { border-color: #4ade80; }
-  a.game.monkey h2 { color: #4ade80; }
-  a.game.monkey .tag { color: #4ade80; border-color: #4ade80; }
-  a.game.soccer:hover { border-color: #60a5fa; }
-  a.game.soccer h2 { color: #60a5fa; }
-  a.game.soccer .tag { color: #60a5fa; border-color: #60a5fa; }
-  a.game.paintball:hover { border-color: #f472b6; }
-  a.game.paintball h2 { color: #f472b6; }
-  a.game.paintball .tag { color: #f472b6; border-color: #f472b6; }
-  /* the Matrix tile: phosphor green on black, with a faint falling-code backdrop */
-  a.game.hardline {
-    position: relative;
-    overflow: hidden;
-    background: #050c08;
-    border-color: #0f3d24;
-    isolation: isolate;
-  }
-  a.game.hardline::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    opacity: .5;
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
     background:
-      repeating-linear-gradient(90deg, transparent 0 13px, rgba(0, 255, 90, .07) 13px 14px),
-      linear-gradient(180deg, rgba(0, 255, 90, .0) 0%, rgba(0, 255, 90, .12) 60%, rgba(0, 0, 0, 0) 100%);
-    background-size: 14px 100%, 100% 200%;
-    animation: hl-rain 6s linear infinite;
+      radial-gradient(900px 420px at 12% -8%, rgba(255, 176, 71, 0.10), transparent 70%),
+      radial-gradient(900px 420px at 88% -8%, rgba(90, 169, 255, 0.10), transparent 70%),
+      linear-gradient(var(--bg), var(--bg));
+    background-attachment: fixed;
+    padding: clamp(20px, 5vw, 56px) clamp(16px, 4vw, 40px) 40px;
   }
-  @keyframes hl-rain { from { background-position: 0 0, 0 -100%; } to { background-position: 0 0, 0 100%; } }
-  @media (prefers-reduced-motion: reduce) { a.game.hardline::before { animation: none; } }
-  a.game.hardline:hover { border-color: #2dff7a; box-shadow: 0 0 24px rgba(45, 255, 122, .25); }
-  a.game.hardline h2 { color: #2dff7a; text-shadow: 0 0 10px rgba(45, 255, 122, .55); }
-  a.game.hardline p { color: #7fae93; }
-  a.game.hardline .tag { color: #2dff7a; border-color: #2dff7a; }
-  footer { color: #4a5578; font-size: 12px; letter-spacing: 1px; }
+  /* faint dot grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 26px 26px;
+    mask-image: linear-gradient(to bottom, #000 0%, transparent 70%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 70%);
+  }
+  main { position: relative; max-width: 1360px; margin: 0 auto; }
+
+  header { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; margin: clamp(8px, 4vw, 40px) 0 clamp(28px, 5vw, 52px); }
+  .mark { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: linear-gradient(160deg, #1b2233, #0f131c); border: 1px solid var(--line); box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+  .mark svg { width: 30px; height: 30px; }
+  h1 { font-size: clamp(38px, 7vw, 68px); font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  h1 span { background: linear-gradient(90deg, #ffb047, #ff5fa2 45%, #5aa9ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tagline { color: var(--muted); font-size: clamp(15px, 2.4vw, 18px); max-width: 34em; }
+
+  .grid { display: grid; grid-template-columns: 1fr; gap: 22px; }
+  @media (min-width: 680px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1380px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    color: inherit;
+    text-decoration: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02)), var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+  .card:hover, .card:focus-visible { transform: translateY(-5px); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 26px 50px -24px var(--accent); }
+  .card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+  .art { aspect-ratio: 16 / 9; overflow: hidden; border-bottom: 1px solid var(--line); background: #0c0f16; }
+  .art svg { display: block; width: 100%; height: 100%; transition: transform 0.5s ease; }
+  .card:hover .art svg, .card:focus-visible .art svg { transform: scale(1.05); }
+
+  .body { display: flex; flex-direction: column; gap: 10px; padding: 20px 22px 22px; flex: 1; }
+  .card h2 { font-size: 22px; font-weight: 750; letter-spacing: -0.01em; color: var(--accent); }
+  .card p { color: var(--muted); font-size: 14.5px; }
+  .meta { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+  .meta li { font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); }
+  .play { display: flex; align-items: center; justify-content: space-between; padding: 13px 22px; border-top: 1px solid var(--line); font-weight: 700; font-size: 14px; color: var(--accent); }
+  .play i { font-style: normal; transition: transform 0.18s ease; }
+  .card:hover .play i, .card:focus-visible .play i { transform: translateX(5px); }
+
+  .monkey { --accent: #ffb047; }
+  .soccer { --accent: #5aa9ff; }
+  .paintball { --accent: #ff5fa2; }
+  .hardline { --accent: #19ff7a; background: linear-gradient(180deg, rgba(25, 255, 122, 0.05), rgba(25, 255, 122, 0.015)), #060c08; }
+  .hardline h2 { text-shadow: 0 0 14px rgba(25, 255, 122, 0.45); }
+
+  /* Hardline's falling code */
+  .rain text:first-child { fill: #c8ffe0; }
+  .rain { animation: fall 8s ease-in-out infinite alternate; }
+  .rain.b { animation-duration: 11s; animation-delay: -4s; }
+  @keyframes fall { from { transform: translateY(-22px); } to { transform: translateY(26px); } }
+  @media (prefers-reduced-motion: reduce) { .rain, .art svg, .card, .play i { animation: none; transition: none; } }
+
+  footer { margin-top: clamp(28px, 5vw, 56px); text-align: center; color: #5d667a; font-size: 13px; }
 </style>
 </head>
 <body>
-  <h1>🕹️ Games</h1>
-  <div class="subtitle">pick your game</div>
-  <div class="games">
-    <a class="game monkey" href="monkey/">
-      <div class="icon">🐵</div>
-      <h2>Monkey Escape</h2>
-      <p>A 3D treetop chase obby — outrun the chimpanzee across six stages of branches, vines, and long jumps.</p>
-      <div class="tag">1 PLAYER · 3D</div>
+<main>
+  <header>
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" fill="none"><path d="M9 11h14a5 5 0 0 1 4.8 6.4l-1 3.4a3.4 3.4 0 0 1-5.6 1.5L19.2 20h-6.4l-2 2.3a3.4 3.4 0 0 1-5.6-1.5l-1-3.4A5 5 0 0 1 9 11z" fill="#e8ecf4"/><path d="M11.5 13.5v4.6M9.2 15.8h4.6" stroke="#0f131c" stroke-width="1.8" stroke-linecap="round"/><circle cx="21.2" cy="14.8" r="1.25" fill="#0f131c"/><circle cx="23.8" cy="17.2" r="1.25" fill="#0f131c"/></svg>
+    </div>
+    <h1><span>Games</span></h1>
+    <p class="tagline">Small browser games. No installs, no accounts — pick one and play.</p>
+  </header>
+
+  <div class="grid">
+
+    <a class="card monkey" href="monkey/">
+      <div class="art">
+        <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2a6b"/><stop offset=".55" stop-color="#e8705a"/><stop offset="1" stop-color="#ffb047"/></linearGradient></defs>
+          <rect width="320" height="180" fill="url(#sky)"/>
+          <circle cx="232" cy="92" r="34" fill="#ffd98a" opacity=".92"/>
+          <g fill="#2b1d3f" opacity=".55"><path d="M0 130 Q40 96 80 126 T160 120 T240 128 T320 112 V180 H0z"/></g>
+          <g fill="#17321f"><path d="M0 150 Q30 120 62 146 T126 140 T190 150 T254 138 T320 150 V180 H0z"/>
+            <circle cx="40" cy="146" r="22"/><circle cx="70" cy="152" r="18"/><circle cx="196" cy="148" r="24"/><circle cx="236" cy="154" r="18"/><circle cx="290" cy="146" r="22"/></g>
+          <path d="M-10 108 C60 98 120 128 200 104 S300 96 330 106" stroke="#3b2414" stroke-width="7" fill="none" stroke-linecap="round"/>
+          <path d="M96 106 C92 124 100 138 96 154" stroke="#2f8f4e" stroke-width="3" fill="none" stroke-linecap="round"/>
+          <g fill="#241309"><circle cx="150" cy="92" r="12"/><circle cx="140" cy="86" r="6"/><circle cx="160" cy="86" r="6"/><ellipse cx="150" cy="104" rx="14" ry="10"/><path d="M162 108 q22 4 20 -16" stroke="#241309" stroke-width="4" fill="none" stroke-linecap="round"/></g>
+          <g fill="#f3c58a"><ellipse cx="150" cy="93" rx="7" ry="6"/></g><g fill="#241309"><circle cx="147" cy="92" r="1.3"/><circle cx="153" cy="92" r="1.3"/></g>
+        </svg>
+      </div>
+      <div class="body">
+        <h2>Monkey Escape</h2>
+        <p>Outrun a chimpanzee across six stages of treetop branches, vines and long jumps.</p>
+        <ul class="meta"><li>1 player</li><li>3D</li><li>Obby</li></ul>
+      </div>
+      <div class="play">Play <i>→</i></div>
     </a>
-    <a class="game soccer" href="soccer/">
-      <div class="icon">⚽</div>
-      <h2>Pixel Pitch</h2>
-      <p>1v1 online pixel soccer — pick your star, send a link to a friend, first to 5 goals wins.</p>
-      <div class="tag">2 PLAYER · ONLINE</div>
+
+    <a class="card soccer" href="soccer/">
+      <div class="art">
+        <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid slice" shape-rendering="crispEdges" aria-hidden="true">
+          <rect width="320" height="180" fill="#2f8f4e"/>
+          <g fill="#37a05a"><rect y="0" width="320" height="30"/><rect y="60" width="320" height="30"/><rect y="120" width="320" height="30"/></g>
+          <g fill="none" stroke="#e8f4ea" stroke-width="3" opacity=".85"><rect x="10" y="12" width="300" height="156"/><path d="M160 12V168"/><circle cx="160" cy="90" r="30"/><rect x="10" y="58" width="40" height="64"/><rect x="270" y="58" width="40" height="64"/></g>
+          <g fill="#eaf3ff"><rect x="150" y="80" width="20" height="20"/></g>
+          <g fill="#0a0d14"><rect x="154" y="76" width="12" height="4"/><rect x="154" y="100" width="12" height="4"/><rect x="146" y="84" width="4" height="12"/><rect x="170" y="84" width="4" height="12"/><rect x="156" y="86" width="8" height="8"/></g>
+          <g><rect x="92" y="70" width="16" height="30" fill="#5aa9ff"/><rect x="94" y="62" width="12" height="10" fill="#f1c6a0"/><rect x="94" y="62" width="12" height="4" fill="#2a1a10"/><rect x="92" y="100" width="6" height="10" fill="#f1c6a0"/><rect x="102" y="100" width="6" height="10" fill="#f1c6a0"/></g>
+          <g><rect x="214" y="84" width="16" height="30" fill="#ff5a5a"/><rect x="216" y="76" width="12" height="10" fill="#d9a77e"/><rect x="216" y="76" width="12" height="4" fill="#111"/><rect x="214" y="114" width="6" height="10" fill="#d9a77e"/><rect x="224" y="114" width="6" height="10" fill="#d9a77e"/></g>
+        </svg>
+      </div>
+      <div class="body">
+        <h2>Pixel Pitch</h2>
+        <p>1v1 pixel soccer. Pick your star and send a link to a friend — or take on the AI. First to five wins.</p>
+        <ul class="meta"><li>1–2 players</li><li>Online</li><li>Pixel art</li></ul>
+      </div>
+      <div class="play">Play <i>→</i></div>
     </a>
-    <a class="game paintball" href="paintball/">
-      <div class="icon">🎯</div>
-      <h2>Standup Paintball</h2>
-      <p>A 3D bot-driven paintball match on a Dust II-style map — paste the standup list, last one standing runs standup. Train the bots between rounds.</p>
-      <div class="tag">TEAM · BOTS · 3D</div>
+
+    <a class="card paintball" href="paintball/">
+      <div class="art">
+        <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs><linearGradient id="pbfloor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2133"/><stop offset="1" stop-color="#0d1018"/></linearGradient></defs>
+          <rect width="320" height="180" fill="url(#pbfloor)"/>
+          <g stroke="#2a3247" stroke-width="1" fill="none"><path d="M0 110H320M0 126H320M0 148H320M0 176H320"/><path d="M160 90L-40 180M160 90L40 180M160 90L110 180M160 90L160 180M160 90L210 180M160 90L280 180M160 90L360 180"/></g>
+          <rect x="30" y="52" width="70" height="58" rx="3" fill="#202a40"/><rect x="224" y="40" width="64" height="70" rx="3" fill="#202a40"/>
+          <g opacity=".95"><circle cx="64" cy="82" r="20" fill="#ff5fa2"/><circle cx="50" cy="96" r="8" fill="#ff5fa2"/><circle cx="86" cy="72" r="6" fill="#ff5fa2"/><path d="M64 100v16" stroke="#ff5fa2" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="262" cy="72" r="17" fill="#38d6ff"/><circle cx="276" cy="86" r="7" fill="#38d6ff"/><circle cx="246" cy="60" r="5" fill="#38d6ff"/><path d="M262 88v14" stroke="#38d6ff" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="170" cy="128" r="14" fill="#ffd84a"/><circle cx="184" cy="136" r="6" fill="#ffd84a"/><circle cx="158" cy="138" r="4" fill="#ffd84a"/></g>
+          <g stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round"><circle cx="160" cy="84" r="17"/><path d="M160 56v14M160 98v14M132 84h14M174 84h14"/></g><circle cx="160" cy="84" r="2.4" fill="#ff5fa2"/>
+        </svg>
+      </div>
+      <div class="body">
+        <h2>Standup Paintball</h2>
+        <p>Bot-driven 3D paintball on a Dust II-style map. Paste the standup list — last one standing runs standup.</p>
+        <ul class="meta"><li>Team</li><li>Bots</li><li>3D</li></ul>
+      </div>
+      <div class="play">Play <i>→</i></div>
     </a>
-    <a class="game hardline" href="hardline/">
-      <div class="icon">💊</div>
-      <h2>Hardline</h2>
-      <p>A two-player escape from inside the Matrix — one of you is jacked in and can see the room, the other holds the manual that can read it. No chat: talk it out, beat the clock, wake up.</p>
-      <div class="tag">2 PLAYER · ONLINE · 3D</div>
+
+    <a class="card hardline" href="hardline/">
+      <div class="art">
+        <svg viewBox="0 0 320 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="13">
+          <rect width="320" height="180" fill="#030805"/>
+          <g class="rain" fill="#19ff7a">
+            <g opacity="1"><text x="14" y="10">ｱ</text><text x="14" y="26" opacity=".8">7</text><text x="14" y="42" opacity=".6">ﾊ</text><text x="14" y="58" opacity=".45">2</text><text x="14" y="74" opacity=".3">ｶ</text></g>
+            <g opacity=".9"><text x="44" y="40">0</text><text x="44" y="56" opacity=".8">ﾐ</text><text x="44" y="72" opacity=".6">9</text><text x="44" y="88" opacity=".4">ｻ</text></g>
+            <g opacity="1"><text x="82" y="0">ﾘ</text><text x="82" y="16" opacity=".8">4</text><text x="82" y="32" opacity=".65">ｳ</text><text x="82" y="48" opacity=".5">1</text><text x="82" y="64" opacity=".35">ﾓ</text><text x="82" y="80" opacity=".2">5</text></g>
+            <g opacity=".85"><text x="118" y="60">ｽ</text><text x="118" y="76" opacity=".7">3</text><text x="118" y="92" opacity=".45">ﾗ</text></g>
+            <g opacity="1"><text x="204" y="20">8</text><text x="204" y="36" opacity=".8">ﾔ</text><text x="204" y="52" opacity=".6">6</text><text x="204" y="68" opacity=".4">ｦ</text></g>
+            <g opacity="1"><text x="240" y="-6">ﾅ</text><text x="240" y="10" opacity=".85">0</text><text x="240" y="26" opacity=".7">ﾇ</text><text x="240" y="42" opacity=".55">7</text><text x="240" y="58" opacity=".4">ｹ</text><text x="240" y="74" opacity=".25">2</text></g>
+            <g opacity=".9"><text x="280" y="30">ｲ</text><text x="280" y="46" opacity=".8">9</text><text x="280" y="62" opacity=".55">ﾒ</text><text x="280" y="78" opacity=".35">1</text></g>
+          </g>
+          <g class="rain b" fill="#19ff7a">
+            <g opacity=".8"><text x="30" y="96">ﾃ</text><text x="30" y="112" opacity=".7">5</text><text x="30" y="128" opacity=".5">ﾎ</text><text x="30" y="144" opacity=".3">8</text></g>
+            <g opacity=".8"><text x="100" y="110">ｷ</text><text x="100" y="126" opacity=".7">6</text><text x="100" y="142" opacity=".45">ﾏ</text><text x="100" y="158" opacity=".3">3</text></g>
+            <g opacity=".8"><text x="262" y="104">ﾄ</text><text x="262" y="120" opacity=".7">4</text><text x="262" y="136" opacity=".45">ﾖ</text><text x="262" y="152" opacity=".3">0</text></g>
+          </g>
+          <defs><radialGradient id="hlglow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#19ff7a" stop-opacity=".28"/><stop offset="1" stop-color="#19ff7a" stop-opacity="0"/></radialGradient></defs>
+          <circle cx="160" cy="92" r="82" fill="url(#hlglow)"/>
+          <defs><clipPath id="pillL"><rect x="100" y="60" width="60" height="64"/></clipPath><clipPath id="pillR"><rect x="160" y="60" width="60" height="64"/></clipPath></defs>
+          <g transform="rotate(-24 160 92)">
+            <rect x="112" y="74" width="96" height="38" rx="19" fill="#2b6bff" clip-path="url(#pillL)"/>
+            <rect x="112" y="74" width="96" height="38" rx="19" fill="#ff2d4a" clip-path="url(#pillR)"/>
+            <path d="M126 83h68" stroke="#fff" stroke-opacity=".3" stroke-width="3" stroke-linecap="round"/>
+          </g>
+        </svg>
+      </div>
+      <div class="body">
+        <h2>Hardline</h2>
+        <p>Escape the construct. One of you sees the room, the other holds the manual — talk it out and beat the clock. Or go it alone.</p>
+        <ul class="meta"><li>1–2 players</li><li>Online</li><li>3D</li></ul>
+      </div>
+      <div class="play">Play <i>→</i></div>
     </a>
+
   </div>
-  <footer>no installs · runs in the browser</footer>
+
+  <footer>Runs in your browser · plain HTML, no build step</footer>
+</main>
 </body>
 </html>

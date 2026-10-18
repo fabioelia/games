@@ -98,9 +98,10 @@ Saved bot brains live in each browser. Announcer callouts play the clips in
 
 ## 💊 Hardline (`hardline/`)
 
-A two-player, voice-first co-op escape set inside a Matrix-style construct.
-One of you is **jacked in** and sees a 3D room but can't read it; the other
-holds the **manual** that can read it but can't see it. No in-game chat —
+A voice-first co-op escape set inside a Matrix-style construct, for two
+players — or **solo**. One of you is **jacked in** and sees a 3D room but
+can't read it; the other holds the **manual** that can read it but can't see
+it. (Solo: you do both — the manual is a pull-up overlay, key **M**.) No in-game chat —
 start a Discord call, describe what you see, and beat the clock. Built with
 [Three.js](https://threejs.org) (vendored, minified).
 
@@ -108,7 +109,8 @@ start a Discord call, describe what you see, and beat the clock. Built with
 Roles swap every room; a wrong answer costs 15 s off the shared clock; running
 out of time re-rolls the room instead of ending the run.
 
-**Playing:** open the page, *Create a private session*, and send your partner
+**Playing:** *Play solo* needs nothing but your tab. For two players, open the
+page, *Create a private session*, and send your partner
 the four-letter code or invite link. There is no game server — like Pixel
 Pitch, it is WebRTC through PeerJS's public broker, and **the creator's tab
 runs the game**, so the host has to keep it open. *Show on TV* opens a
