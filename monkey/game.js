@@ -91,6 +91,7 @@ for (let i = 0; i < (MOBILE ? 18 : 28); i++) {
   const z = 8 - i * 4.2;
   const x = side * (30 + (i % 3) * 9);
   tree.position.set(x, GROUND_Y, z);
+  tree.traverse((o) => { o.castShadow = false; }); // their long shadows used to blacken the platforms you have to land on
   scene.add(tree);
   groveTrees.push({ tree, ph: i * 1.3, amp: 0.012 + (i % 3) * 0.004 });
 }
@@ -301,6 +302,9 @@ function clearStageMeshes() {
   swingAnchors = [];
 }
 
+// the chimp waits at the back corner of the start pad, clear of the camera's line to the monkey
+const chimpSide = (pad) => Math.min(2.6, pad.def.w / 2 - 1);
+
 function loadStage(stage, label, depth) {
   clearStageMeshes();
   curStage = stage; curLabel = label; curDepth = depth;
@@ -419,7 +423,7 @@ function loadStage(stage, label, depth) {
   monkey.rotation.set(0, 0, 0);
   chimp_s.trail = [spawnPos.clone()];
   chimp_s.target = 0;
-  chimp_s.pos.set(spawn.base.x, spawn.top + chimp_s.height / 2, spawn.base.z + 3); // behind start, ON the pad
+  chimp_s.pos.set(spawn.base.x + chimpSide(spawn), spawn.top + chimp_s.height / 2, spawn.base.z + 3); // behind start, ON the pad (off to one side so it doesn't block the camera)
   chimp_s.vel.set(0, 0, 0); chimp_s.onGround = true; chimp_s.groundPlat = spawn; chimp_s.jumpCD = 0;
   chimp_s.active = false; chimp_s.stun = 0; chimp_s.stuckT = 0;
   chimp_s.speed = stage.chimpSpeed;
@@ -432,7 +436,7 @@ function loadStage(stage, label, depth) {
   chimp.scale.setScalar(0.7 + Math.min(0.5, depth * 0.04)); // grows scarier with depth
   fireflies.visible = !!stage.night;
   hudStage.textContent = label;
-  hudCp.textContent = 'Checkpoint 0';
+  hudCp.textContent = 'Start';
 }
 
 // --- entry points: curated levels, endless random run, restart current -------
@@ -481,7 +485,7 @@ function restartStage() {
   const spawn = checkpoints[0].pos;
   PLAYER.pos.copy(spawn); PLAYER.vel.set(0, 0, 0);
   lastCheckpoint = checkpoints[0];
-  hudCp.textContent = 'Checkpoint 0';
+  hudCp.textContent = 'Start';
   // re-collectable bananas, refund any taken this life
   let takenNow = 0;
   for (const b of bananas) { if (b.taken) takenNow++; b.taken = false; b.mesh.visible = true; }
@@ -490,7 +494,7 @@ function restartStage() {
   chimp_s.trail = [spawn.clone()];
   chimp_s.target = 0;
   const sp0 = platforms[0];
-  chimp_s.pos.set(sp0.base.x, sp0.top + chimp_s.height / 2, sp0.base.z + 3);
+  chimp_s.pos.set(sp0.base.x + chimpSide(sp0), sp0.top + chimp_s.height / 2, sp0.base.z + 3);
   chimp_s.vel.set(0, 0, 0); chimp_s.onGround = true; chimp_s.groundPlat = sp0; chimp_s.jumpCD = 0;
   chimp_s.active = false; chimp_s.stun = 0; chimp_s.stuckT = 0;
   chimp.position.copy(chimp_s.pos);
@@ -594,24 +598,54 @@ function beginPlay() {
   if (isTouch) document.getElementById('touchui').style.display = 'block';
 }
 function pauseGame() {
-  if (!started || finished || paused || caughtT > 0) return;
+  if (!started || finished || paused) return;
   paused = true; running = false; pauseAt = clock.elapsedTime;
+  for (const k in keys) keys[k] = false; // a key held while the window lost focus must not stay "down"
+  touchMove.set(0, 0);
+  if (document.pointerLockElement) document.exitPointerLock();
   showPause();
 }
 
-canvas.addEventListener('click', () => { if (banner.classList.contains('hidden') && !paused && !isTouch) canvas.requestPointerLock(); });
+canvas.addEventListener('click', () => { if (banner.classList.contains('hidden') && !paused && !isTouch && !dragLook) lockOrStart(); });
+let lockedAt = 0;
 document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement === canvas) beginPlay();
-  else if (started && !finished && caughtT <= 0 && !paused) pauseGame(); // Esc / lock lost -> pause
+  if (document.pointerLockElement === canvas) { lockedAt = performance.now(); beginPlay(); }
+  else if (started && !finished && !paused) pauseGame(); // Esc / lock lost -> pause (even mid-"Gotcha!")
 });
 document.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return;
+  // Chrome sometimes reports one enormous bogus delta right as the lock engages (it spins the camera
+  // a full turn before you've touched the mouse): ignore the first moments and any absurd jump.
+  if (performance.now() - lockedAt < 120 || Math.abs(e.movementX) > 300 || Math.abs(e.movementY) > 300) return;
   yaw -= e.movementX * lookSens;
   pitch = Math.max(-0.85, Math.min(0.85, pitch - e.movementY * lookSens));
 });
 
-// desktop locks the pointer; touch starts directly (no lock available)
-function lockOrStart() { if (isTouch) beginPlay(); else canvas.requestPointerLock(); }
+// Desktop locks the pointer (mouse-look). Touch starts directly. If the browser refuses the lock — an
+// embedded frame, a blocked permission, or Chrome's ~1s cooldown after you press Esc — fall back to
+// "drag to look" instead of leaving a dead Resume button: hold the mouse button and drag to turn.
+let dragLook = false, dragging = false;
+function softStart() { dragLook = true; beginPlay(); }
+function lockOrStart() {
+  if (isTouch) return beginPlay();
+  if (dragLook) return beginPlay();
+  try {
+    const r = canvas.requestPointerLock();
+    if (r && typeof r.catch === 'function') r.catch(() => { if (!document.pointerLockElement) softStart(); });
+  } catch (_) { softStart(); }
+}
+document.addEventListener('pointerlockerror', () => { if (!document.pointerLockElement) softStart(); });
+canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse' && dragLook) dragging = true; });
+window.addEventListener('pointerup', () => { dragging = false; });
+window.addEventListener('mousemove', (e) => {
+  if (!dragLook || !dragging || paused || !running) return;
+  yaw -= e.movementX * lookSens;
+  pitch = Math.max(-0.85, Math.min(0.85, pitch - e.movementY * lookSens));
+});
+// Esc (when the pointer isn't locked), P, and leaving the tab all pause
+window.addEventListener('keydown', (e) => { if ((e.code === 'Escape' || e.code === 'KeyP') && !e.repeat) { if (paused) lockOrStart(); else pauseGame(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+window.addEventListener('blur', () => pauseGame());
 
 // On-screen joystick + buttons for touch devices.
 const touchMove = new THREE.Vector2(0, 0);
@@ -1033,7 +1067,7 @@ function tick() {
   // checkpoints
   for (const cp of checkpoints)
     if (cp.index > lastCheckpoint.index && PLAYER.pos.distanceTo(cp.pos) < 4) {
-      lastCheckpoint = cp; hudCp.textContent = `Checkpoint ${cp.index}`;
+      lastCheckpoint = cp; hudCp.textContent = `✔ Checkpoint ${cp.index}`;
       // reaching the banana-tree checkpoint pays out 5 bananas (once per stage)
       if (cp.index === lastCpIndex && !cpRewarded) {
         cpRewarded = true; score += 5; updateScore();
@@ -1251,3 +1285,16 @@ updateScore();
 loadStage(STAGES[0], 'Stage 1', 0); // a scene to render behind the menu
 showMenu();
 tick();
+
+// Read-mostly debug hook (used by the browser tests): lets a script see the run state and aim the camera.
+window.__monkey = {
+  get yaw() { return yaw; }, set yaw(v) { yaw = v; },
+  get pitch() { return pitch; }, set pitch(v) { pitch = v; },
+  state: () => ({
+    pos: PLAYER.pos.toArray(), vel: PLAYER.vel.toArray(), onGround: PLAYER.onGround,
+    ground: PLAYER.groundPlat ? platforms.indexOf(PLAYER.groundPlat) : -1,
+    caught: caughtT > 0, running, finished, paused, started, stageIndex, score, checkpoint: lastCheckpoint?.index,
+    chimp: chimp_s.pos.toArray(), chimpActive: chimp_s.active, chimpDist: chimp_s.dist,
+    platforms: platforms.map((p) => ({ x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z, w: p.def.w, d: p.def.d, top: p.top, goal: p.goal, bounce: p.def.bounce ?? 0 })),
+  }),
+};

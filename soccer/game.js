@@ -14,6 +14,10 @@ const SPRINT_MULT = 1.45;
 const STAMINA_DRAIN = 30, STAMINA_REGEN = 18;
 const CHARGE_MAX = 0.8;            // seconds of shot charge
 const KEEPER_RADIUS = 5;
+// The keeper can't leave the middle of the goal (KEEPER_INSET px in from each post) and dives at KEEPER_DIVE px/s.
+// Tuned so a shot into a corner usually beats him, a shot at the middle never does, and the ones in between
+// are a toss-up (it used to cover all but ~3px of the mouth, so almost nothing went in).
+const KEEPER_INSET = 16, KEEPER_DIVE = 120;
 const PAUSE_GRACE = 20;            // seconds to wait for a reconnect
 const EMOTES = ['GG 🤝', 'SIUUU 🔥', 'LUCKY 🍀', 'OLÉ 😎'];
 
@@ -34,6 +38,8 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 function showScreen(name) {
   for (const k in screens) screens[k].classList.toggle('active', k === name);
   gameWrap.classList.toggle('active', name === 'game');
+  document.body.classList.toggle('ingame', name === 'game');
+  $('btnMute').style.display = name === 'game' ? 'none' : '';
   const touchUI = $('touchUI');
   if (touchUI) touchUI.classList.toggle('on', name === 'game' && IS_TOUCH);
 }
@@ -51,7 +57,16 @@ fitCanvas();
 /* ================= Audio ================= */
 
 let AC = null;
+const MUTE_KEY = 'pixel-pitch-muted';
+let muted = false;
+try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch (e) { /* storage unavailable */ }
+function setMuted(m) {
+  muted = m;
+  $('btnMute').textContent = muted ? '🔇' : '🔊';
+  try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (e) { /* ignore */ }
+}
 function beep(freq, dur, type = 'square', vol = 0.04) {
+  if (muted) return;
   try {
     AC = AC || new (window.AudioContext || window.webkitAudioContext)();
     const o = AC.createOscillator(), g = AC.createGain();
@@ -73,6 +88,7 @@ addEventListener('touchstart', unlockAudio, { once: true });
 addEventListener('keydown', unlockAudio, { once: true });
 
 function cheerNoise(dur = 0.9) {  // white-noise crowd roar
+  if (muted) return;
   try {
     unlockAudio();
     const n = Math.floor(AC.sampleRate * dur);
@@ -128,6 +144,7 @@ const game = {
   bubbles: [null, null],   // speech bubbles per player {text, t}
   replayBuf: [],
   replayT: 0,
+  userPause: false,        // vs AI / local only: Esc or P (or leaving the tab) freezes the match
 };
 
 function simulating() { return game.mode === 'host' || game.mode === 'local' || game.mode === 'ai'; }
@@ -164,6 +181,7 @@ function startMatch() {
   game.puTimer = 8;
   game.bubbles = [null, null];
   game.rematchLocal = game.rematchRemote = false;
+  game.userPause = false;
   game.players = [null, null];
   resetKickoff();
   game.phase = 'countdown';
@@ -228,8 +246,31 @@ function dispatchAction(action) {
   else if (simulating()) applyAction(0, action);
 }
 
+const typing = () => /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
+function canUserPause() { return (game.mode === 'ai' || game.mode === 'local') && ['countdown', 'play', 'goal', 'replay'].includes(game.phase); }
+function toggleUserPause(on = !game.userPause) {
+  if (on && !canUserPause()) return;
+  game.userPause = on;
+  if (on) releaseAll();
+}
+// forget held keys (and finish a shot being charged) — used when the window loses focus
+function releaseAll() {
+  for (const k in keys) keys[k] = false;
+  touchMove.left = touchMove.right = touchMove.up = touchMove.down = touchMove.sprint = 0;
+  if (game.phase === 'play') {
+    if (game.mode === 'local') { applyAction(0, 'shootEnd'); applyAction(1, 'shootEnd'); }
+    else if (game.mode !== 'spectate') dispatchAction('shootEnd');
+  }
+}
+addEventListener('blur', () => { releaseAll(); if (canUserPause()) toggleUserPause(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && canUserPause()) toggleUserPause(true); });
+
 addEventListener('keydown', e => {
   if (e.repeat) return;
+  if (e.code === 'KeyM' && !typing()) { setMuted(!muted); return; }
+  if (!typing() && (e.code === 'Escape' || e.code === 'KeyP') && (canUserPause() || game.userPause)) { toggleUserPause(); return; }
+  if (game.userPause && e.code === 'Enter') { toMenu(); return; }
+  if (game.userPause) return;
   keys[e.code] = true;
   const active = ['play', 'countdown'].includes(game.phase);
   if (!active) return;
@@ -372,6 +413,7 @@ function movePlayer(pi, input, dt) {
     const n = Math.hypot(dx, dy);
     dx /= n; dy /= n;
     let speed = ch.spd;
+    if (game.mode === 'ai' && pi === 1) speed *= AI_LEVELS[aiLevel].spd;
     if (wantSprint) speed *= SPRINT_MULT;
     if (p.boost > 0) speed *= 1.4;
     if (p.frozen > 0) speed *= 0.45;
@@ -393,9 +435,9 @@ function stepKeeper(i, dt) {
   const incoming = b.owner < 0 && (i === 0 ? b.vx < -60 : b.vx > 60);
   const near = Math.abs(b.x - kx) < 130;
   const target = near ? b.y : 116;
-  const spd = incoming ? 150 : 55;
+  const spd = incoming ? KEEPER_DIVE : 55;
   kp.y += Math.max(-spd * dt, Math.min(spd * dt, target - kp.y));
-  kp.y = Math.max(GOAL.y0 + 10, Math.min(GOAL.y1 - 10, kp.y));
+  kp.y = Math.max(GOAL.y0 + KEEPER_INSET, Math.min(GOAL.y1 - KEEPER_INSET, kp.y));
   if (Math.hypot(b.x - kx, b.y - kp.y) < KEEPER_RADIUS + 2) {
     if (b.owner >= 0) {
       // strip a dribbler who walks into the keeper
@@ -536,7 +578,7 @@ function simulate(dt) {
   while (remoteActions.length) applyAction(1, remoteActions.shift());
   if (aiRelease > 0) {
     aiRelease -= dt;
-    if (aiRelease <= 0) applyAction(1, 'shootEnd');
+    if (aiRelease <= 0) { game.players[1].fx = -1; game.players[1].fy = 0; applyAction(1, 'shootEnd'); }
   }
 
   // separate overlapping players
@@ -613,7 +655,22 @@ function afterGoal() {
 
 /* ================= AI opponent ================= */
 
-const ai = { t: 0, move: { up: 0, down: 0, left: 0, right: 0, sprint: 0 }, aimY: 116 };
+const ai = { t: 0, move: { up: 0, down: 0, left: 0, right: 0, sprint: 0 }, aimY: null, aimT: 0 };
+// difficulty: how often it re-thinks, how often it wins a tackle, speed, shot accuracy, when it sprints
+const AI_LEVELS = {
+  easy:   { think: 0.22, steal: 0.30, spd: 0.88, tol: 14, sprintSt: 55, aimJit: 16 },
+  normal: { think: 0.13, steal: 0.60, spd: 1.00, tol: 9,  sprintSt: 35, aimJit: 9 },
+  hard:   { think: 0.07, steal: 0.85, spd: 1.06, tol: 5,  sprintSt: 22, aimJit: 2 },
+};
+// pick the corner away from the keeper once per possession; aimJit pulls the shot toward the (saveable) middle
+function pickAim(L) {
+  const keeperLow = game.keepers[0].y > 116;
+  const base = keeperLow ? GOAL.y0 + 4 : GOAL.y1 - 4;
+  return keeperLow ? base + L.aimJit * Math.random() : base - L.aimJit * Math.random();
+}
+const AI_KEY = 'pixel-pitch-ai';
+let aiLevel = 'normal';
+try { const v = localStorage.getItem(AI_KEY); if (AI_LEVELS[v]) aiLevel = v; } catch (e) { /* ignore */ }
 let aiRelease = 0;
 
 function aiThink() {
@@ -623,30 +680,35 @@ function aiThink() {
 function aiStep(dt) {
   if (game.mode !== 'ai' || game.phase !== 'play') return;
   const me = game.players[1], opp = game.players[0], b = game.ball;
+  const L = AI_LEVELS[aiLevel];
   ai.t -= dt;
   if (ai.t > 0) return;
-  ai.t = 0.12;
+  ai.t = L.think;
   let tx, ty, sprint = 0;
   if (b.owner === 1) {
-    // attack the LEFT goal, aim at whichever corner is farther from the keeper
-    ai.aimY = game.keepers[0].y > 116 ? GOAL.y0 + 4 : GOAL.y1 - 4;
+    // attack the LEFT goal: choose where to shoot once, then line up on it (re-choose only if the keeper moves across to cover it)
+    const covered = ai.aimY != null && ai.aimT <= 0 && Math.abs(game.keepers[0].y - ai.aimY) < 12;
+    if (ai.aimY == null || covered) { ai.aimY = pickAim(L); ai.aimT = 1.2; }
+    ai.aimT -= L.think;
     tx = FIELD.x0 + 26; ty = ai.aimY - 10;   // dribble offset puts the ball at aimY
-    sprint = me.st > 35 && me.x > 180 ? 1 : 0;
-    if (me.x < 175 && Math.abs((me.y + 10) - ai.aimY) < 10 && me.charge < 0 && aiRelease <= 0) {
+    sprint = me.st > L.sprintSt && me.x > 180 ? 1 : 0;
+    if (me.x < 175 && Math.abs((me.y + 10) - ai.aimY) < L.tol && me.charge < 0 && aiRelease <= 0) {
       me.fx = -1; me.fy = 0;
       applyAction(1, 'shootStart');
       aiRelease = 0.3 + Math.random() * 0.35;
     }
   } else if (b.owner === 0) {
+    ai.aimY = null;
     tx = opp.x + opp.fx * 12; ty = opp.y + opp.fy * 12;
-    sprint = me.st > 30 ? 1 : 0;
+    sprint = me.st > L.sprintSt - 5 ? 1 : 0;
     const ch = getCharacter(game.chars[1]);
-    if (Math.hypot(b.x - me.x, b.y - me.y) < ch.tkl * 0.9 && me.stealCd <= 0 && Math.random() < 0.7) {
+    if (Math.hypot(b.x - me.x, b.y - me.y) < ch.tkl * 0.9 && me.stealCd <= 0 && Math.random() < L.steal) {
       remoteActions.push('steal');
     }
   } else {
+    ai.aimY = null;
     tx = b.x; ty = b.y - 10;
-    sprint = me.st > 25 && Math.hypot(b.x - me.x, b.y - me.y) > 60 ? 1 : 0;
+    sprint = me.st > L.sprintSt - 10 && Math.hypot(b.x - me.x, b.y - me.y) > 60 ? 1 : 0;
     // grab loose power-ups when they're close by
     if (game.pu && Math.hypot(game.pu.x - me.x, game.pu.y - me.y) < 70) { tx = game.pu.x; ty = game.pu.y - 8; }
   }
@@ -656,6 +718,8 @@ function aiStep(dt) {
     up: dy < -3 ? 1 : 0, down: dy > 3 ? 1 : 0,
     sprint,
   };
+  // while winding up a shot keep facing the goal and don't drift sideways (the shot goes where it faces)
+  if (b.owner === 1 && me.charge >= 0) { ai.move.up = ai.move.down = 0; ai.move.right = 0; ai.move.left = 1; ai.move.sprint = 0; }
 }
 
 /* ================= Networking glue ================= */
@@ -908,7 +972,7 @@ function enterOver(msg) {
     : game.mode === 'local' ? `Player ${game.winner} Wins!`
     : (iWon ? '🏆 You Win!' : 'You Lose');
   $('overScore').textContent = `${c1.name} ${game.score[0]} — ${game.score[1]} ${c2.name}`;
-  $('overStatus').textContent = msg || '';
+  $('overStatus').textContent = msg || (game.mode === 'ai' ? `vs AI · ${aiLevel}` : '');
   $('btnRematch').disabled = !!msg || game.mode === 'spectate';
   if (decided && game.mode !== 'local' && game.mode !== 'spectate') {
     if (game.mode === 'host' || game.mode === 'ai') sfx[iWon ? 'win' : 'lose']();
@@ -1058,6 +1122,26 @@ $('btnCopy').onclick = async () => {
   $('btnCopy').textContent = 'Copied!';
   setTimeout(() => { $('btnCopy').textContent = 'Copy'; }, 1500);
 };
+
+function toMenu() {
+  if (game.mode === 'host' || game.mode === 'guest' || game.mode === 'spectate') { location.href = location.pathname; return; } // drop the connection
+  game.mode = null; game.phase = 'idle'; game.userPause = false;
+  game.myChar = null;
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+  $('btnConfirm').disabled = true;
+  showScreen('menu');
+}
+$('btnMenu').onclick = toMenu;
+$('btnMute').onclick = () => setMuted(!muted);
+setMuted(muted);
+document.querySelectorAll('#aiLevel button').forEach(b => {
+  b.classList.toggle('selected', b.dataset.lvl === aiLevel);
+  b.onclick = () => {
+    aiLevel = b.dataset.lvl;
+    try { localStorage.setItem(AI_KEY, aiLevel); } catch (e) { /* ignore */ }
+    document.querySelectorAll('#aiLevel button').forEach(x => x.classList.toggle('selected', x === b));
+  };
+});
 
 $('btnRematch').onclick = () => {
   if (game.mode === 'local' || game.mode === 'ai') { startMatch(); return; }
@@ -1326,6 +1410,16 @@ function drawHUD(now) {
   } else if (game.phase === 'play' && game.gg && Math.floor(now / 350) % 2) {
     smallBanner('⚡ GOLDEN GOAL — NEXT SCORES WINS ⚡', 32);
   }
+  if (game.userPause) {
+    banner('PAUSED');
+    smallBanner('Esc / P  resume  ·  Enter  quit to menu', H / 2 + 34);
+  }
+  if (muted) {
+    ctx.font = '8px "Courier New", monospace';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#93a0c9';
+    ctx.fillText('MUTED (M)', W - 6, 16);
+  }
 }
 
 function banner(text) {
@@ -1369,17 +1463,21 @@ function frame(now) {
   const inGame = ['countdown', 'play', 'goal', 'replay', 'paused'].includes(game.phase);
   if (inGame && game.players[0]) {
     if (simulating()) {
-      aiStep(dt);
-      simulate(dt);
-      if (game.mode === 'host') {
-        bcastFrame = !bcastFrame;
-        if (bcastFrame || game.phase !== 'play') NET.broadcast(stateMsg());
+      if (!game.userPause) {
+        aiStep(dt);
+        simulate(dt);
+        if (game.mode === 'host') {
+          bcastFrame = !bcastFrame;
+          if (bcastFrame || game.phase !== 'play') NET.broadcast(stateMsg());
+        }
       }
     } else {
       guestSmooth();
     }
-    for (const bb of game.bubbles) if (bb) bb.t -= dt;
-    stepParts(dt);
+    if (!game.userPause) {
+      for (const bb of game.bubbles) if (bb) bb.t -= dt;
+      stepParts(dt);
+    }
 
     ctx.clearRect(0, 0, W, H);
     ctx.save();

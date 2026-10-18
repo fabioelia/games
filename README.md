@@ -8,7 +8,11 @@ is a launcher that picks between them.
 A 3D treetop chase obby: play a monkey escaping a chimpanzee across six
 treetop stages. Built with [Three.js](https://threejs.org).
 
-**Controls:** WASD/arrows to run, Space to jump. Touch controls on mobile.
+**Controls:** WASD/arrows to run, Space to jump (twice for a flip, hold to
+glide), Shift to dash, E to throw a banana, Esc or P to pause, M to mute.
+Touch controls on mobile. If your browser won't capture the mouse (or Chrome
+refuses a re-lock right after Esc) the game falls back to hold-and-drag to
+look. The game pauses itself when you switch tabs.
 
 ## ⚽ Pixel Pitch (`soccer/`)
 
@@ -16,14 +20,17 @@ A pixel-art 1v1 soccer game. Play online via share link or room code,
 locally on one keyboard, or against the AI.
 
 **Modes:** first to 5 goals, or timed 2:00 halves with golden goal ·
-online 1v1 · local 2P · vs AI · extra viewers on the share link spectate.
+online 1v1 · local 2P · vs AI (Easy / Normal / Hard) · extra viewers on the
+share link spectate. Esc or P pauses a vs-AI or local match (Enter quits to
+the menu); M mutes.
 
 **Controls:** arrows/WASD move · Space steals · hold Shift to charge a
 shot, release to fire · X sprints (watch the stamina bar) · 1-4 emotes.
 Local 2P: P1 = WASD/Q/E/F, P2 = arrows/Space/Shift/period.
 Touch stick + buttons on mobile.
 
-**On the pitch:** goalkeepers guard the middle — aim for the corners.
+**On the pitch:** goalkeepers guard the middle — aim for the corners (a shot
+into a corner usually beats the keeper, one at the middle never does).
 Power-ups spawn mid-field (⚡ speed boost, ❄ freeze the opponent).
 Goals get celebrations, confetti, and a slow-mo replay. Win/loss records
 per character are kept in your browser.

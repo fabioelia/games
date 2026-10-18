@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // 3-step toon gradient ramp shared by all toon materials.
-const ramp = new Uint8Array([90,90,90,255, 175,175,175,255, 255,255,255,255]);
+const ramp = new Uint8Array([125,125,125,255, 190,190,190,255, 255,255,255,255]); // lifted shadow band: platforms stay readable in shade
 const gradientMap = new THREE.DataTexture(ramp, 3, 1, THREE.RGBAFormat);
 gradientMap.minFilter = THREE.NearestFilter;
 gradientMap.magFilter = THREE.NearestFilter;

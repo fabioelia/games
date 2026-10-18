@@ -44,7 +44,13 @@
     padding: 20px;
     width: 100%;
     max-width: 960px;
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow-y: auto;       /* a tall screen scrolls instead of clipping its top and bottom */
   }
+  /* centred when it fits, scrollable from the top when it doesn't */
+  .screen > :first-child { margin-top: auto; }
+  .screen > :last-child { margin-bottom: auto; }
   .screen.active { display: flex; }
   button {
     font-family: inherit;
@@ -71,6 +77,7 @@
     max-width: 640px;
   }
   @media (min-width: 700px) { .roster { grid-template-columns: repeat(3, 1fr); } }
+  #btnConfirm { position: sticky; bottom: 8px; z-index: 2; box-shadow: 0 0 0 6px var(--bg); }
   .card {
     background: var(--panel);
     border: 3px solid var(--panel2);
@@ -105,6 +112,27 @@
   .status { color: var(--dim); font-size: 14px; min-height: 20px; text-align: center; }
   .status.err { color: #f87171; }
   .joinrow { display: flex; gap: 8px; }
+  /* ===== menu layout ===== */
+  .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 100%; max-width: 640px; }
+  @media (max-width: 560px) { .menu-grid { grid-template-columns: 1fr; } }
+  .mcard { background: var(--panel); border: 3px solid var(--panel2); padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .mcard h3 { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: var(--dim); }
+  .mcard button { width: 100%; }
+  .mcard .row { display: flex; gap: 8px; width: 100%; }
+  .mcard .row button { flex: 1; padding-left: 10px; padding-right: 10px; }
+  .mcard .joinrow { width: 100%; }
+  .mcard .joinrow input { flex: 1; width: auto; min-width: 0; }
+  .mcard .joinrow button { width: auto; }
+  .seg { display: flex; width: 100%; }
+  .seg button { flex: 1; background: var(--bg); color: var(--dim); border: 2px solid var(--panel2); border-bottom-width: 2px; padding: 6px 4px; font-size: 11px; letter-spacing: 1px; }
+  .seg button.selected { color: var(--accent2); border-color: var(--accent2); background: var(--panel2); }
+  .seglabel { font-size: 10px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
+  .rules { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .rules .moderow { gap: 0; }
+  #btnMute { position: fixed; top: 8px; left: 8px; z-index: 20; width: auto; padding: 6px 10px; font-size: 14px; letter-spacing: 0; background: rgba(20, 27, 51, .85); color: var(--ink); border-bottom-width: 2px; border-color: transparent; }
+  #pauseHint { display: none; }
+  #rotateHint { display: none; position: fixed; left: 0; right: 0; top: 0; z-index: 12; padding: 8px 12px; background: #fbbf24; color: #1a1300; font-size: 12px; font-weight: bold; text-align: center; letter-spacing: 1px; }
+  @media (orientation: portrait) and (pointer: coarse) { body.ingame #rotateHint { display: block; } }
   .moderow { display: flex; gap: 0; }
   .modebtn {
     background: var(--panel);
@@ -197,6 +225,15 @@
     pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
   }
   #game { touch-action: none; }
+  /* short windows (laptops, phones in landscape): smaller sprites so the whole roster + Confirm fit */
+  @media (max-height: 820px) {
+    #screen-select { gap: 10px; padding: 10px 20px; }
+    .roster { gap: 8px; }
+    .card { padding: 6px 4px 5px; gap: 3px; }
+    .card canvas { width: 48px; height: 64px; }
+    .card .cname { font-size: 12px; }
+    .card .cstats { line-height: 1.25; }
+  }
 </style>
 </head>
 <body>
@@ -204,26 +241,38 @@
 <!-- ===== TITLE / MENU ===== -->
 <div class="screen active" id="screen-menu">
   <h1>⚽ Pixel Pitch</h1>
-  <div class="subtitle">1v1 online pixel soccer — first to 5 goals</div>
-  <div style="height:8px"></div>
-  <div class="joinrow">
-    <input type="text" id="joinCode" maxlength="8" placeholder="room code"
-           autocomplete="off" autocapitalize="off" spellcheck="false">
-    <button class="secondary" id="btnJoin">Join</button>
+  <div class="subtitle">1v1 pixel soccer — play the AI, a friend on this keyboard, or a friend online</div>
+  <div class="rules">
+    <div class="seglabel">Match rules</div>
+    <div class="moderow">
+      <button class="modebtn selected" id="modeGoals">First to 5</button>
+      <button class="modebtn" id="modeTimed">Timed 2:00</button>
+    </div>
   </div>
-  <div class="moderow">
-    <button class="modebtn selected" id="modeGoals">First to 5</button>
-    <button class="modebtn" id="modeTimed">Timed 2:00</button>
+  <div class="menu-grid">
+    <section class="mcard">
+      <h3>Play now</h3>
+      <button id="btnAI">Vs AI</button>
+      <div class="seg" id="aiLevel" role="group" aria-label="AI difficulty">
+        <button data-lvl="easy">Easy</button><button data-lvl="normal" class="selected">Normal</button><button data-lvl="hard">Hard</button>
+      </div>
+      <button class="secondary" id="btnLocal">Local 2P</button>
+    </section>
+    <section class="mcard">
+      <h3>Play online</h3>
+      <button id="btnCreate">Create match</button>
+      <div class="seglabel">or join a friend</div>
+      <div class="joinrow">
+        <input type="text" id="joinCode" maxlength="8" placeholder="room code"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="secondary" id="btnJoin">Join</button>
+      </div>
+    </section>
   </div>
-  <button id="btnCreate">Create Match</button>
-  <div class="joinrow">
-    <button class="secondary" id="btnLocal">Local 2P</button>
-    <button class="secondary" id="btnAI">Vs AI</button>
-  </div>
-  <div class="status" id="menuHint">type a friend's code and Join — or enter your own code (or none) and Create</div>
+  <div class="status" id="menuHint">Online: create a match and send your friend the link or code. (Type a name in the box before Create to choose your own room code.)</div>
   <div class="status err" id="menuStatus"></div>
   <div class="controls-hint">
-    <kbd>←↑↓→</kbd>/<kbd>WASD</kbd> move · <kbd>Space</kbd> steal · <kbd>Shift</kbd> hold&nbsp;to&nbsp;charge, release&nbsp;to&nbsp;shoot · <kbd>X</kbd> sprint · <kbd>1-4</kbd> emotes
+    <kbd>←↑↓→</kbd>/<kbd>WASD</kbd> move · <kbd>Space</kbd> steal · <kbd>Shift</kbd> hold&nbsp;to&nbsp;charge, release&nbsp;to&nbsp;shoot · <kbd>X</kbd> sprint · <kbd>1-4</kbd> emotes · <kbd>M</kbd> mute · <kbd>Esc</kbd> pause (vs AI / local)
     <br>local 2P — P1: <kbd>WASD</kbd> <kbd>Q</kbd> steal <kbd>E</kbd> shoot <kbd>F</kbd> sprint · P2: <kbd>←↑↓→</kbd> <kbd>Space</kbd> <kbd>Shift</kbd> <kbd>.</kbd> sprint
     <br>on mobile: touch stick &amp; buttons appear in-game
   </div>
@@ -257,6 +306,9 @@
   <div class="status pulse" id="lobbyStatus">Connecting…</div>
 </div>
 
+<button id="btnMute" class="secondary" title="Mute (M)" aria-label="Mute sound">🔊</button>
+<div id="rotateHint">↻ Turn your phone sideways for a bigger pitch</div>
+
 <!-- ===== GAME ===== -->
 <div id="gameWrap">
   <canvas id="game" width="384" height="216"></canvas>
@@ -280,13 +332,16 @@
 <div class="screen" id="screen-over">
   <h1 style="font-size:28px" id="overTitle">Full Time</h1>
   <div class="status" id="overScore" style="font-size:20px;color:var(--ink)"></div>
-  <button id="btnRematch">Rematch</button>
+  <div class="joinrow">
+    <button id="btnRematch">Rematch</button>
+    <button class="secondary" id="btnMenu">Menu</button>
+  </div>
   <div class="status" id="overStatus"></div>
 </div>
 
-<script src="peerjs.min.js?v=6"></script>
-<script src="characters.js?v=6"></script>
-<script src="net.js?v=6"></script>
-<script src="game.js?v=6"></script>
+<script src="peerjs.min.js?v=7"></script>
+<script src="characters.js?v=7"></script>
+<script src="net.js?v=7"></script>
+<script src="game.js?v=7"></script>
 </body>
 </html>
